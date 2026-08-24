@@ -42,4 +42,4 @@ STAR_UNIT_PRICE_UZS = float(os.getenv("STAR_UNIT_PRICE_UZS", "216.0"))
 
 # ---- Мини-апп ----
 # URL веб-версии магазина (адрес второго сервиса на Railway, после деплоя webapp_server.py)
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://komizz-sys.github.io/oson-store-web/")
