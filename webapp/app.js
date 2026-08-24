@@ -1,0 +1,403 @@
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) { tg.expand(); tg.ready(); }
+
+/* ---------------- i18n ---------------- */
+const I18N = {
+  uz: {
+    ijara_title: "Gift Arendasi", history_title: "Xaridlar tarixi",
+    history_empty: "Hozircha xaridlar tarixi bo'sh.", history_hint: "To'liq tarix - botdagi \"Mening buyurtmalarim\" bo'limida.",
+    top_title: "Reyting", top_subtitle: "Eng faol mijozlar", top_forming: "Reyting shakllanmoqda", top_hint: "Birinchi xaridni amalga oshiring!",
+    referral_title: "Referal tizimi", referral_subtitle: "Do'stlaringizni taklif qiling!", referral_link_label: "Sizning referal havolangiz:", referral_copy: "Havolani nusxalash",
+    profile_operator: "Operator",
+    nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_referral: "Referal", nav_profile: "Profil",
+    modal_to_whom: "Kimga?", modal_to_self: "O'zimga", modal_to_friend: "Do'stimga",
+    modal_recipient_label: "Qabul qiluvchi (@username):", modal_message_label: "Xabar (ixtiyoriy):",
+    modal_message_placeholder: "Tabrik matni...", modal_rent_days: "Necha kunga?",
+    modal_card_label: "To'lov uchun karta (Uzcard/Humo)", modal_card_holder_label: "Qabul qiluvchi",
+    modal_copy: "Nusxalash", modal_paid: "To'ladim", modal_cancel: "Bekor qilish",
+    err_username: "Username kiriting", err_no_username: "Sizda public username yo'q. Telegram sozlamalaridan o'rnating yoki \"Do'stimga\" tanlang.",
+    rent_terms: (fee, refund) => "Komissiya: 0.1 gram (~" + fee + "). Ijaradan so'ng 40% (~" + refund + ") qaytariladi.",
+    copied: "Nusxalandi!", empty: "Hozircha bo'sh.", rent_days_suffix: "kun", rent_from: "dan", rent_btn: "Ijaraga olish",
+  },
+  ru: {
+    ijara_title: "Аренда гифтов", history_title: "История покупок",
+    history_empty: "Пока пусто.", history_hint: "Полная история - в разделе «Мои заказы» в боте.",
+    top_title: "Рейтинг", top_subtitle: "Самые активные клиенты", top_forming: "Рейтинг формируется", top_hint: "Сделайте первую покупку!",
+    referral_title: "Реферальная система", referral_subtitle: "Приглашай друзей и получай бонусы!", referral_link_label: "Твоя реферальная ссылка:", referral_copy: "Скопировать ссылку",
+    profile_operator: "Оператор",
+    nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_referral: "Рефералы", nav_profile: "Профиль",
+    modal_to_whom: "Кому?", modal_to_self: "Себе", modal_to_friend: "Другу",
+    modal_recipient_label: "Получатель (@username):", modal_message_label: "Сообщение (необязательно):",
+    modal_message_placeholder: "Текст поздравления...", modal_rent_days: "На сколько дней?",
+    modal_card_label: "Карта для оплаты (Uzcard/Humo)", modal_card_holder_label: "Получатель",
+    modal_copy: "Скопировать", modal_paid: "Я оплатил", modal_cancel: "Отмена",
+    err_username: "Введите username", err_no_username: "У вас нет публичного username. Установите в настройках Telegram или выберите \"Другу\".",
+    rent_terms: (fee, refund) => "Комиссия сети: 0.1 gram (~" + fee + "). После аренды вернётся 40% (~" + refund + ").",
+    copied: "Скопировано!", empty: "Пока пусто.", rent_days_suffix: "дн.", rent_from: "от", rent_btn: "Арендовать",
+  },
+};
+I18N.kk = I18N.ru; I18N.tj = I18N.ru; I18N.en = I18N.ru; // TODO: отдельные переводы
+
+let lang = "uz";
+function t(key) { return I18N[lang][key] !== undefined ? I18N[lang][key] : key; }
+
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(function(el) {
+    const key = el.dataset.i18n;
+    const val = t(key);
+    if (typeof val === "string") el.textContent = val;
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el) {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  renderRentTerms();
+  if (currentTab === "ijara") renderIjara();
+  else renderItems();
+}
+
+function setActiveFlagUI() {
+  Array.prototype.forEach.call(document.querySelectorAll(".lang-flag"), function(btn) {
+    btn.classList.toggle("active", btn.dataset.lang === lang);
+  });
+}
+
+Array.prototype.forEach.call(document.querySelectorAll(".lang-flag"), function(btn) {
+  btn.addEventListener("click", function() {
+    lang = btn.dataset.lang;
+    setActiveFlagUI();
+    applyI18n();
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  });
+});
+setActiveFlagUI();
+
+/* ---------------- Форматирование ---------------- */
+function fmtUZS(n) { return Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ") + " so'm"; }
+
+/* ---------------- Загрузка каталога ---------------- */
+const catalog = { stars: [], premium: [], simple_gift: [], nft_rent: [] };
+let currentCategory = "stars";
+let currentTab = "asosiy";
+
+async function loadCatalog(cat) {
+  if (catalog[cat].length) return catalog[cat];
+  const res = await fetch("/api/" + cat);
+  if (!res.ok) throw new Error("bad response " + cat);
+  const data = await res.json();
+  catalog[cat] = data.map(normalizeItem(cat));
+  return catalog[cat];
+}
+
+function normalizeItem(cat) {
+  return function(raw) {
+    if (cat === "stars") return { kind: "stars", title: raw.amount.toLocaleString("ru-RU") + " Stars", price: raw.price_uzs, emoji: "⭐️", raw: raw };
+    if (cat === "premium") return { kind: "premium", title: raw.label, price: raw.price_uzs, emoji: "👑", raw: raw };
+    if (cat === "simple_gift") return { kind: "simple_gift", title: raw.star_count + "⭐", price: raw.price_uzs, emoji: raw.sticker_emoji || "🎁", raw: raw };
+    if (cat === "nft_rent") return { kind: "nft_rent", title: raw.name, price: raw.price_per_day_uzs_with_markup, emoji: pickGiftEmoji(raw.name), image: raw.image_url, raw: raw };
+  };
+}
+
+// Фото у API нет, подбираем эмодзи по названию для узнаваемости карточки
+function pickGiftEmoji(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("pepe")) return "🐸";
+  if (n.includes("cat")) return "🐱";
+  if (n.includes("bird")) return "🐦";
+  if (n.includes("wine")) return "🍷";
+  if (n.includes("hat") || n.includes("cap")) return "🎩";
+  if (n.includes("watch")) return "⌚️";
+  if (n.includes("ring")) return "💍";
+  if (n.includes("bear")) return "🧸";
+  if (n.includes("rose") || n.includes("flower")) return "🌹";
+  if (n.includes("crown")) return "👑";
+  return "🖼";
+}
+
+async function renderItems() {
+  const grid = document.getElementById("products-grid");
+  grid.innerHTML = skeletonHTML(6, "h-24");
+  let items;
+  try { items = await loadCatalog(currentCategory); }
+  catch (e) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+
+  if (!items.length) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+
+  grid.innerHTML = items.map(function(it, i) {
+    return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10">' +
+      '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>' +
+      '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
+      '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
+    '</div>';
+  }).join("");
+
+  Array.prototype.forEach.call(grid.querySelectorAll(".product-card"), function(card) {
+    card.addEventListener("click", function() { openModal(items[Number(card.dataset.i)]); });
+  });
+}
+
+// Карточка аренды в стиле MarketApp: картинка-плейсхолдер с бейджем срока,
+// название, цена + "so'm" + "· N kun", кнопка "Ijaraga olish"
+async function renderIjara() {
+  const grid = document.getElementById("ijara-grid");
+  grid.innerHTML = skeletonHTML(4, "h-64");
+  let items;
+  try { items = await loadCatalog("nft_rent"); }
+  catch (e) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+
+  if (!items.length) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+
+  grid.innerHTML = items.map(function(it, i) {
+    const imgBlock = it.image
+      ? '<img src="' + it.image + '" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />' +
+        '<div class="absolute inset-0 hidden items-center justify-center"><span class="text-5xl animated-gift">' + it.emoji + '</span></div>'
+      : '<div class="absolute inset-0 flex items-center justify-center"><span class="text-5xl animated-gift">' + it.emoji + '</span></div>';
+
+    const discountBadge = it.raw.discount_per_day > 0
+      ? '<span class="absolute top-2 right-2 bg-red-500/80 backdrop-blur text-[9px] font-bold px-1.5 py-0.5 rounded-md text-white">-' + it.raw.discount_per_day + '%</span>'
+      : '';
+
+    const numberBadge = it.raw.number
+      ? '<span class="text-[10px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
+      : '';
+
+    return '<div class="bg-[#0d1424] border border-white/10 rounded-2xl overflow-hidden flex flex-col">' +
+      '<div class="rent-img relative h-32">' +
+        imgBlock +
+        discountBadge +
+        '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[9px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
+          t("rent_from") + ' ' + it.raw.min_duration_days + '-' + it.raw.max_duration_days + ' ' + t("rent_days_suffix") +
+        '</span>' +
+      '</div>' +
+      '<div class="p-3 flex flex-col gap-1">' +
+        '<div class="flex items-center justify-between">' +
+          '<div class="text-xs font-bold text-white truncate">' + it.title + '</div>' +
+          numberBadge +
+        '</div>' +
+        '<div class="text-xs font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[10px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
+        '<button data-i="' + i + '" class="rent-btn mt-1.5 w-full py-2 rounded-xl bg-neon-blue font-bold text-white text-xs active:scale-95 transition-all">' + t("rent_btn") + '</button>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+
+  Array.prototype.forEach.call(grid.querySelectorAll(".rent-btn"), function(btn) {
+    btn.addEventListener("click", function() { openModal(items[Number(btn.dataset.i)]); });
+  });
+}
+
+function skeletonHTML(n, heightClass) {
+  let out = "";
+  for (let i = 0; i < n; i++) out += '<div class="skeleton rounded-2xl ' + heightClass + '"></div>';
+  return out;
+}
+
+function setCategory(cat) {
+  currentCategory = cat;
+  Array.prototype.forEach.call(document.querySelectorAll(".cat-btn"), function(btn) {
+    btn.className = "cat-btn px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs whitespace-nowrap text-gray-300";
+  });
+  document.getElementById("cat-" + cat).className = "cat-btn px-4 py-1.5 rounded-full bg-gradient-to-r from-neon-yellow to-amber-500 text-black text-xs font-bold whitespace-nowrap shadow-[0_0_10px_rgba(234,179,8,0.3)]";
+  renderItems();
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  ["asosiy","ijara","tarix","top","referal","profil"].forEach(function(x) {
+    document.getElementById("view-" + x).classList.add("view-hidden");
+  });
+  document.getElementById("view-" + tab).classList.remove("view-hidden");
+  Array.prototype.forEach.call(document.querySelectorAll(".nav-btn"), function(btn) {
+    btn.classList.remove("text-neon-blue"); btn.classList.add("text-gray-500");
+  });
+  document.getElementById("tab-" + tab).classList.remove("text-gray-500");
+  document.getElementById("tab-" + tab).classList.add("text-neon-blue");
+  if (tab === "ijara") renderIjara();
+}
+
+/* ---------------- Модалка оплаты ---------------- */
+let activeItem = null;
+let recipientType = "self";
+let rentDays = 1;
+
+const modal = document.getElementById("payment-modal");
+const modalContent = document.getElementById("payment-content");
+
+function setRecipient(type) {
+  recipientType = type;
+  const btnSelf = document.getElementById("rec-self");
+  const btnFriend = document.getElementById("rec-friend");
+  const userField = document.getElementById("username-field");
+  const activeCls = "flex-1 py-1.5 rounded-lg bg-white/10 font-semibold text-xs text-white";
+  const inactiveCls = "flex-1 py-1.5 rounded-lg text-gray-400 font-semibold text-xs";
+
+  if (type === "self") {
+    btnSelf.className = activeCls; btnFriend.className = inactiveCls;
+    userField.classList.add("hidden");
+  } else {
+    btnFriend.className = activeCls; btnSelf.className = inactiveCls;
+    userField.classList.remove("hidden");
+  }
+  document.getElementById("modal-error").classList.add("hidden");
+}
+
+function stepDays(delta) {
+  if (!activeItem || activeItem.kind !== "nft_rent") return;
+  const min = activeItem.raw.min_duration_days, max = activeItem.raw.max_duration_days;
+  const next = rentDays + delta;
+  if (next < min || next > max) return;
+  rentDays = next;
+  document.getElementById("days-value").textContent = rentDays;
+  document.getElementById("modal-price").textContent = fmtUZS(activeItem.price * rentDays);
+}
+
+async function openModal(item) {
+  activeItem = item;
+  rentDays = item.kind === "nft_rent" ? item.raw.min_duration_days : 1;
+
+  document.getElementById("modal-title").textContent = item.title + (item.raw && item.raw.number ? " #" + item.raw.number : "");
+  const emojiEl = document.getElementById("modal-emoji");
+  if (item.image) {
+    emojiEl.innerHTML = '<img src="' + item.image + '" class="w-10 h-10 rounded-lg object-cover" onerror="this.parentElement.textContent=\'' + item.emoji + '\';" />';
+  } else {
+    emojiEl.textContent = item.emoji;
+  }
+  document.getElementById("modal-price").textContent = fmtUZS(item.kind === "nft_rent" ? item.price * rentDays : item.price);
+  document.getElementById("gift-message").value = "";
+  document.getElementById("gift-username").value = "";
+  document.getElementById("modal-error").classList.add("hidden");
+  setRecipient("self");
+
+  document.getElementById("rent-days-field").classList.toggle("hidden", item.kind !== "nft_rent");
+  if (item.kind === "nft_rent") document.getElementById("days-value").textContent = rentDays;
+
+  try {
+    const pay = await getPaymentInfo();
+    document.getElementById("pay-card-number").textContent = pay.card_number || "—";
+    document.getElementById("pay-card-holder").textContent = pay.card_holder || "—";
+  } catch (e) {
+    document.getElementById("pay-card-number").textContent = "—";
+  }
+
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  modal.classList.remove("hidden");
+  requestAnimationFrame(function() {
+    modal.classList.remove("opacity-0");
+    modalContent.classList.remove("translate-y-full");
+  });
+}
+
+function closeModal() {
+  modalContent.classList.add("translate-y-full");
+  modal.classList.add("opacity-0");
+  setTimeout(function() { modal.classList.add("hidden"); }, 300);
+}
+
+let _paymentInfoCache = null;
+async function getPaymentInfo() {
+  if (_paymentInfoCache) return _paymentInfoCache;
+  const res = await fetch("/api/payment_info");
+  _paymentInfoCache = await res.json();
+  return _paymentInfoCache;
+}
+
+function copyCard() {
+  getPaymentInfo().then(function(p) {
+    navigator.clipboard.writeText((p.card_number || "").replace(/\s/g, ""));
+    if (tg && tg.showAlert) tg.showAlert(t("copied")); else alert(t("copied"));
+  });
+}
+
+function copyReferral() {
+  const link = document.getElementById("referral-link").textContent;
+  navigator.clipboard.writeText(link);
+  if (tg && tg.showAlert) tg.showAlert(t("copied")); else alert(t("copied"));
+}
+
+function openOperatorChat() {
+  const handle = document.getElementById("operator-handle").textContent;
+  if (handle && handle !== "—" && tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + handle.replace("@", ""));
+}
+
+/* ---------------- Отправка заказа боту ---------------- */
+function sendPaymentInfo() {
+  const errorEl = document.getElementById("modal-error");
+  let friendUsername = document.getElementById("gift-username").value.trim();
+
+  if (recipientType === "friend") {
+    if (!friendUsername) { errorEl.textContent = t("err_username"); errorEl.classList.remove("hidden"); return; }
+    if (friendUsername.charAt(0) !== "@") friendUsername = "@" + friendUsername;
+  }
+
+  const tgUser = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
+  const selfUsername = tgUser && tgUser.username ? "@" + tgUser.username : null;
+
+  if (recipientType === "self" && !selfUsername && activeItem.kind !== "simple_gift") {
+    errorEl.textContent = t("err_no_username");
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  const item = activeItem;
+  const message = document.getElementById("gift-message").value.trim();
+  const recipient = recipientType === "self" ? (selfUsername || "") : friendUsername;
+
+  const payload = {
+    category: item.kind,
+    recipient: recipient,
+    recipient_type: recipientType,
+    note: message || undefined,
+  };
+
+  if (item.kind === "stars") {
+    payload.item_name = item.raw.amount + " звёзд"; payload.price = item.raw.price_uzs; payload.quantity = item.raw.amount;
+  } else if (item.kind === "premium") {
+    payload.item_name = "Premium — " + item.raw.label; payload.price = item.raw.price_uzs; payload.quantity = 1;
+  } else if (item.kind === "simple_gift") {
+    payload.item_name = "Подарок " + item.emoji + " (" + item.raw.star_count + "⭐)"; payload.price = item.raw.price_uzs; payload.quantity = 1; payload.gift_id = item.raw.id;
+  } else if (item.kind === "nft_rent") {
+    payload.item_name = item.raw.name; payload.nft_address = item.raw.nft_address;
+    payload.base_price_per_day_gram = item.raw.base_price_per_day_gram;
+    payload.min_days = item.raw.min_duration_days; payload.max_days = item.raw.max_duration_days;
+    payload.days = rentDays;
+  }
+
+  if (tg && tg.sendData) {
+    tg.sendData(JSON.stringify(payload));
+    tg.close();
+  } else {
+    alert("DEMO (Telegram ichida ochish kerak): " + JSON.stringify(payload, null, 2));
+  }
+}
+
+/* ---------------- Профиль / рефералка / условия аренды ---------------- */
+function initProfile() {
+  const u = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
+  if (!u) return;
+  document.getElementById("profile-name").textContent = u.first_name || "Mijoz";
+  document.getElementById("profile-username").textContent = u.username ? "@" + u.username : "";
+  document.getElementById("profile-id").textContent = "ID: " + u.id;
+  document.getElementById("profile-avatar").textContent = (u.first_name ? u.first_name.charAt(0) : "?").toUpperCase();
+}
+
+async function initReferral() {
+  try {
+    const u = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
+    const res = await fetch("/api/bot_info");
+    const data = await res.json();
+    const ref = u ? "https://t.me/" + data.username + "?start=ref" + u.id : "https://t.me/" + data.username;
+    document.getElementById("referral-link").textContent = ref;
+    document.getElementById("operator-handle").textContent = "@admin";
+  } catch (e) { /* тихо игнорируем */ }
+}
+
+async function renderRentTerms() {
+  try {
+    const res = await fetch("/api/rent_terms");
+    const d = await res.json();
+    document.getElementById("rent-terms-text").textContent = t("rent_terms")(fmtUZS(d.fee_uzs), fmtUZS(d.refund_uzs));
+  } catch (e) { /* тихо игнорируем */ }
+}
+
+/* ---------------- Init ---------------- */
+applyI18n();
+initProfile();
+initReferral();
