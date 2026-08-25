@@ -1,8 +1,8 @@
 {
   "stars": [
-    {"amount": 50, "price_uzs": 10700},
+    {"amount": 50, "price_uzs": 10000},
     {"amount": 75, "price_uzs": 16000},
-    {"amount": 100, "price_uzs": 21300},
+    {"amount": 100, "price_uzs": 20000},
     {"amount": 150, "price_uzs": 32000},
     {"amount": 250, "price_uzs": 53300},
     {"amount": 350, "price_uzs": 74700},
@@ -24,10 +24,10 @@
     {"amount": 10000000, "price_uzs": 2133000000}
   ],
   "premium": [
-    {"label": "1 месяц", "price_uzs": 39000},
-    {"label": "3 месяца", "price_uzs": 180000},
-    {"label": "6 месяцев", "price_uzs": 230000},
-    {"label": "12 месяцев (входим на аккаунт)", "price_uzs": 270000},
+    {"label": "1 месяц", "price_uzs": 40000},
+    {"label": "3 месяца", "price_uzs": 190000},
+    {"label": "6 месяцев", "price_uzs": 235000},
+    {"label": "12 месяцев (входим на аккаунт)", "price_uzs": 295000},
     {"label": "12 месяцев (как подарок)", "price_uzs": 400000}
   ],
   "nft_rent": [
