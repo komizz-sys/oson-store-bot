@@ -27,7 +27,7 @@ CURRENCY = "UZS"
 MARKETAPP_API_KEY = os.getenv("MARKETAPP_API_KEY", "")
 
 # Наценка на базовую цену аренды (в долях), см. services/marketapp_service.py
-RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.3"))  # +30%
+RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.2"))  # +20%
 
 # Курс: сколько сум стоит 1 грамм TON (обнови при изменении курса)
 TON_GRAM_RATE_UZS = int(os.getenv("TON_GRAM_RATE_UZS", "18250"))
@@ -43,3 +43,8 @@ STAR_UNIT_PRICE_UZS = float(os.getenv("STAR_UNIT_PRICE_UZS", "213.3"))
 # ---- Мини-апп ----
 # URL веб-версии магазина (адрес второго сервиса на Railway, после деплоя webapp_server.py)
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+
+# ---- Публичный канал с выполненными заказами (для доверия новых клиентов) ----
+# Можно указать @username канала (для публичных) или числовой ID (-100...) для приватных.
+# Бот должен быть добавлен в канал как администратор с правом публикации.
+PUBLIC_ORDERS_CHANNEL = os.getenv("PUBLIC_ORDERS_CHANNEL", "")

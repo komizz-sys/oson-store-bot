@@ -9,6 +9,7 @@ from services.prices import format_uzs
 from services.fragment_service import try_auto_fulfill_stars, notify_manual_premium
 from services.marketapp_service import start_rent_payment
 from services.telegram_gifts import fulfill_simple_gift
+from services.public_channel import post_completed_order
 
 router = Router()
 
@@ -69,6 +70,7 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
         if success:
             await set_order_status(order_id, "completed")
             await bot.send_message(order["user_id"], f"🎉 Заказ #{order_id} выполнен! {note}")
+            await post_completed_order(bot, order)
         for admin_id in config.ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, f"Заказ #{order_id}: {note}")
@@ -115,3 +117,4 @@ async def mark_done(call: CallbackQuery, bot: Bot):
         order["user_id"],
         f"🎉 Заказ #{order_id} ({order['item_name']}) выполнен! Спасибо за покупку 🙌",
     )
+    await post_completed_order(bot, order)
