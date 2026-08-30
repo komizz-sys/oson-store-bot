@@ -8,7 +8,7 @@ const I18N = {
     history_empty: "Hozircha xaridlar tarixi bo'sh.", history_hint: "To'liq tarix - botdagi \"Mening buyurtmalarim\" bo'limida.",
     top_title: "Reyting", top_subtitle: "Eng faol mijozlar", top_forming: "Reyting shakllanmoqda", top_hint: "Birinchi xaridni amalga oshiring!",
     referral_title: "Referal tizimi", referral_subtitle: "Do'stlaringizni taklif qiling!", referral_link_label: "Sizning referal havolangiz:", referral_copy: "Havolani nusxalash",
-    profile_operator: "Operator", profile_channel: "📢 Bot kanali", profile_orders_channel: "🛒 Savdo/Orderlar",
+    profile_operator: "Operator", profile_channel: "\ud83d\udce2 Bot kanali", profile_orders_channel: "\ud83d\uded2 Savdo/Orderlar",
     nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_referral: "Referal", nav_profile: "Profil",
     modal_to_whom: "Kimga?", modal_to_self: "O'zimga", modal_to_friend: "Do'stimga",
     modal_recipient_label: "Qabul qiluvchi (@username):", modal_message_label: "Xabar (ixtiyoriy):",
@@ -19,7 +19,7 @@ const I18N = {
     rent_terms: (fee, refund) => "Xizmat haqi: ~" + fee + ". Ijara tugagach ~" + refund + " qaytariladi.",
     copied: "Nusxalandi!", empty: "Hozircha bo'sh.", rent_days_suffix: "kun", rent_from: "dan", rent_btn: "Ijaraga olish",
     modal_preview: "Telegram-da ko'rish",
-    sort_recent: "Yangilanganlar", sort_price_asc: "Narx: arzon", sort_price_min: "Narx: min",
+    sort_recent: "Yangilari", sort_price_asc: "Narx: arzon", sort_price_desc: "Narx: qimmat", sort_price_min: "Narx: min",
     sort_duration_asc: "Muddat: qisqa", sort_duration_desc: "Muddat: uzun",
   },
   ru: {
@@ -27,7 +27,7 @@ const I18N = {
     history_empty: "Пока пусто.", history_hint: "Полная история - в разделе «Мои заказы» в боте.",
     top_title: "Рейтинг", top_subtitle: "Самые активные клиенты", top_forming: "Рейтинг формируется", top_hint: "Сделайте первую покупку!",
     referral_title: "Реферальная система", referral_subtitle: "Приглашай друзей и получай бонусы!", referral_link_label: "Твоя реферальная ссылка:", referral_copy: "Скопировать ссылку",
-    profile_operator: "Оператор", profile_channel: "📢 Канал бота", profile_orders_channel: "🛒 Заказы/Отзывы",
+    profile_operator: "Оператор", profile_channel: "\ud83d\udce2 Канал бота", profile_orders_channel: "\ud83d\uded2 Заказы/Отзывы",
     nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_referral: "Рефералы", nav_profile: "Профиль",
     modal_to_whom: "Кому?", modal_to_self: "Себе", modal_to_friend: "Другу",
     modal_recipient_label: "Получатель (@username):", modal_message_label: "Сообщение (необязательно):",
@@ -38,11 +38,29 @@ const I18N = {
     rent_terms: (fee, refund) => "Сервисный сбор: ~" + fee + ". После окончания аренды вернётся ~" + refund + ".",
     copied: "Скопировано!", empty: "Пока пусто.", rent_days_suffix: "дн.", rent_from: "от", rent_btn: "Арендовать",
     modal_preview: "Смотреть в Telegram",
-    sort_recent: "Недавно обновлённые", sort_price_asc: "Цена: дешевле", sort_price_min: "Цена: мин",
+    sort_recent: "Новинки", sort_price_asc: "Цена: дешевле", sort_price_desc: "Цена: дороже", sort_price_min: "Цена: мин",
     sort_duration_asc: "Срок: короче", sort_duration_desc: "Срок: длиннее",
   },
+  en: {
+    ijara_title: "Gift rental", history_title: "Purchase history",
+    history_empty: "Nothing here yet.", history_hint: "Full history is in \"My orders\" in the bot chat.",
+    top_title: "Rating", top_subtitle: "Most active customers", top_forming: "Rating is forming", top_hint: "Make your first purchase!",
+    referral_title: "Referral program", referral_subtitle: "Invite friends and get bonuses!", referral_link_label: "Your referral link:", referral_copy: "Copy link",
+    profile_operator: "Operator", profile_channel: "\ud83d\udce2 Bot channel", profile_orders_channel: "\ud83d\uded2 Orders channel",
+    nav_main: "Home", nav_rent: "Rent", nav_history: "History", nav_referral: "Referral", nav_profile: "Profile",
+    modal_to_whom: "For whom?", modal_to_self: "Myself", modal_to_friend: "A friend",
+    modal_recipient_label: "Recipient (@username):", modal_message_label: "Message (optional):",
+    modal_message_placeholder: "Congratulation text...", modal_rent_days: "For how many days?",
+    modal_card_label: "Payment card (Uzcard/Humo)", modal_card_holder_label: "Recipient",
+    modal_copy: "Copy", modal_paid: "I've paid", modal_cancel: "Cancel",
+    err_username: "Enter a username", err_no_username: "You don't have a public username. Set one in Telegram settings or choose \"A friend\".",
+    rent_terms: (fee, refund) => "Service fee: ~" + fee + ". ~" + refund + " is refunded after the rental ends.",
+    copied: "Copied!", empty: "Nothing here yet.", rent_days_suffix: "days", rent_from: "from", rent_btn: "Rent",
+    modal_preview: "View in Telegram",
+    sort_recent: "Newest", sort_price_asc: "Price: cheapest", sort_price_desc: "Price: priciest", sort_price_min: "Price: min",
+    sort_duration_asc: "Duration: shortest", sort_duration_desc: "Duration: longest",
+  },
 };
-I18N.kk = I18N.ru; I18N.tj = I18N.ru; I18N.en = I18N.ru; // TODO: отдельные переводы
 
 let lang = "uz";
 function t(key) { return I18N[lang][key] !== undefined ? I18N[lang][key] : key; }
@@ -88,11 +106,19 @@ let currentRentSort = "recently_touch";
 
 async function loadCatalog(cat, forceReload) {
   if (catalog[cat].length && !forceReload) return catalog[cat];
-  const url = cat === "nft_rent" ? "/api/nft_rent?sort_by=" + currentRentSort : "/api/" + cat;
+
+  // "Narx: qimmat" (дороже) — API MarketApp такой сортировки не поддерживает,
+  // берём отсортированные по возрастанию цены и просто переворачиваем на клиенте
+  const isClientDesc = cat === "nft_rent" && currentRentSort === "price_desc_client";
+  const backendSort = isClientDesc ? "price_per_day" : currentRentSort;
+
+  const url = cat === "nft_rent" ? "/api/nft_rent?sort_by=" + backendSort : "/api/" + cat;
   const res = await fetch(url);
   if (!res.ok) throw new Error("bad response " + cat);
   const data = await res.json();
-  catalog[cat] = data.map(normalizeItem(cat));
+  let mapped = data.map(normalizeItem(cat));
+  if (isClientDesc) mapped = mapped.slice().reverse();
+  catalog[cat] = mapped;
   return catalog[cat];
 }
 
@@ -312,10 +338,54 @@ async function openModal(item) {
 }
 
 function closeModal() {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // убрать клавиатуру
   modalContent.classList.add("translate-y-full");
   modal.classList.add("opacity-0");
   setTimeout(function() { modal.classList.add("hidden"); }, 300);
 }
+
+// Клик по затемнённому фону вокруг шторки — тоже закрывает
+modal.addEventListener("click", function(e) {
+  if (e.target === modal) closeModal();
+});
+
+/* ---------------- Свайп вниз для закрытия шторки ---------------- */
+(function enableSwipeToDismiss() {
+  const handle = document.getElementById("sheet-handle");
+  let startY = 0, currentY = 0, dragging = false;
+
+  function onStart(y) {
+    dragging = true;
+    startY = y;
+    currentY = y;
+    modalContent.style.transition = "none";
+  }
+  function onMove(y) {
+    if (!dragging) return;
+    currentY = y;
+    const delta = Math.max(0, currentY - startY);
+    modalContent.style.transform = "translateY(" + delta + "px)";
+  }
+  function onEnd() {
+    if (!dragging) return;
+    dragging = false;
+    modalContent.style.transition = "";
+    const delta = currentY - startY;
+    modalContent.style.transform = "";
+    if (delta > 90) {
+      closeModal();
+    }
+  }
+
+  handle.addEventListener("touchstart", function(e) { onStart(e.touches[0].clientY); }, { passive: true });
+  handle.addEventListener("touchmove", function(e) { onMove(e.touches[0].clientY); }, { passive: true });
+  handle.addEventListener("touchend", onEnd);
+
+  // На всякий случай (десктоп/тестирование) — те же события мышью
+  handle.addEventListener("mousedown", function(e) { onStart(e.clientY); });
+  document.addEventListener("mousemove", function(e) { if (dragging) onMove(e.clientY); });
+  document.addEventListener("mouseup", onEnd);
+})();
 
 let _paymentInfoCache = null;
 async function getPaymentInfo() {
@@ -378,18 +448,12 @@ function sendPaymentInfo() {
     if (friendUsername.charAt(0) !== "@") friendUsername = "@" + friendUsername;
   }
 
-  const tgUser = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
-  const selfUsername = tgUser && tgUser.username ? "@" + tgUser.username : null;
-
-  if (recipientType === "self" && !selfUsername && activeItem.kind !== "simple_gift") {
-    errorEl.textContent = t("err_no_username");
-    errorEl.classList.remove("hidden");
-    return;
-  }
-
+  // Юзернейм для "себе" достаём на СЕРВЕРЕ (бот всегда точно знает,
+  // кто написал) — клиентский tg.initDataUnsafe не всегда надёжен
+  // (кэш вебвью и т.п.), поэтому здесь ничего не проверяем и не блокируем.
   const item = activeItem;
   const message = document.getElementById("gift-message").value.trim();
-  const recipient = recipientType === "self" ? (selfUsername || "") : friendUsername;
+  const recipient = recipientType === "self" ? "" : friendUsername;
 
   const payload = {
     category: item.kind,

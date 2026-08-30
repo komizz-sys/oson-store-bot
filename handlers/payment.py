@@ -7,6 +7,8 @@ from database.db import attach_payment_proof, get_order, set_order_status
 from handlers.states import OrderStates
 from keyboards.admin_kb import admin_review_kb
 from services.prices import format_uzs
+from services.i18n import t
+from database.db import get_user_language
 
 router = Router()
 
@@ -59,11 +61,9 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
     await attach_payment_proof(order_id, file_id)
 
     order = await get_order(order_id)
+    lang = await get_user_language(message.from_user.id)
 
-    await message.answer(
-        "✅ Чек получен! Заказ отправлен на проверку админу. "
-        "Как только оплата подтвердится — мы приступим к выполнению."
-    )
+    await message.answer(t(lang, "proof_received"))
     await state.clear()
 
     caption = (

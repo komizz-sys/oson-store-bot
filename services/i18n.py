@@ -5,15 +5,13 @@
 загрузка чека) пока на русском для всех языков — это следующий шаг, если нужно
 дальше расширять перевод.
 
-kk/tj/en временно используют русские тексты (алиас) — отдельных переводов под
-них пока нет.
+Языки: узбекский, русский, английский (полные переводы). Казахский/таджикский
+убраны из выбора по решению владельца бота.
 """
 
 LANGUAGES = [
     ("uz", "🇺🇿", "O'zbek"),
     ("ru", "🇷🇺", "Русский"),
-    ("kk", "🇰🇿", "Қазақ"),
-    ("tj", "🇹🇯", "Тоҷик"),
     ("en", "🇬🇧", "English"),
 ]
 
@@ -51,6 +49,25 @@ TRANSLATIONS = {
         "support_prompt": "💬 Xabaringizni yozing — operator tez orada javob beradi:",
         "support_sent": "✅ Xabaringiz yuborildi. Operator tez orada javob beradi.",
         "menu_support": "💬 Yordam / Operator",
+        "no_username_error": (
+            "Sizda public username yo'q — Telegram sozlamalaridan o'rnating "
+            "yoki boshqa @username ko'rsating."
+        ),
+        "proof_received": (
+            "✅ Chek qabul qilindi! Buyurtmangiz admin tomonidan tekshirilmoqda.\n\n"
+            "⏳ <b>Sizning buyurtmangiz bajarilyabdi, iltimos kutib turing</b> — "
+            "o'rtacha buyurtmalar 3-10 daqiqada bajariladi."
+        ),
+        "order_completed": (
+            "🎉 <b>Buyurtma #{order_id} ({item_name}) bajarildi!</b>\n"
+            "Xaridingiz uchun rahmat 🙌\n\n"
+            "Sizni yana kutib qolamiz! 🤗"
+        ),
+        "order_rejected": (
+            "❌ Buyurtma #{order_id} bo'yicha to'lov tasdiqlanmadi.\n"
+            "Xato deb hisoblasangiz — operator bilan bog'laning."
+        ),
+        "payment_confirmed": "✅ Buyurtma #{order_id} bo'yicha to'lov tasdiqlandi! Bajarishga kirishyapmiz.",
     },
     "ru": {
         "choose_language": "Выберите язык:",
@@ -85,11 +102,80 @@ TRANSLATIONS = {
         "support_prompt": "💬 Напишите ваше сообщение — оператор скоро ответит:",
         "support_sent": "✅ Сообщение отправлено. Оператор скоро ответит.",
         "menu_support": "💬 Поддержка / Оператор",
+        "no_username_error": (
+            "У вас нет публичного username — установите в настройках Telegram "
+            "или укажите другой @username."
+        ),
+        "proof_received": (
+            "✅ Чек получен! Заказ отправлен на проверку админу.\n\n"
+            "⏳ <b>Ваш заказ выполняется, пожалуйста подождите</b> — "
+            "в среднем заказы выполняются за 3-10 минут."
+        ),
+        "order_completed": (
+            "🎉 <b>Заказ #{order_id} ({item_name}) выполнен!</b>\n"
+            "Спасибо за покупку 🙌\n\n"
+            "Ждём вас снова! 🤗"
+        ),
+        "order_rejected": (
+            "❌ Оплата по заказу #{order_id} не подтверждена.\n"
+            "Если считаете это ошибкой — напишите оператору."
+        ),
+        "payment_confirmed": "✅ Оплата по заказу #{order_id} подтверждена! Приступаем к выполнению.",
+    },
+    "en": {
+        "choose_language": "Choose language:",
+        "welcome": (
+            "👋 Welcome!\n\n"
+            "Here you can buy ⭐ Telegram Stars, 💎 Telegram Premium "
+            "and rent 🖼 NFT gifts. Payment in Uzbek som.\n\n"
+            "Choose a section:"
+        ),
+        "menu_webapp": "🛍 Open shop",
+        "menu_stars": "⭐ Buy Stars",
+        "menu_premium": "💎 Telegram Premium",
+        "menu_simple_gift": "🎁 Simple gifts",
+        "menu_nft_rent": "🖼 NFT gift rental",
+        "menu_my_orders": "📦 My orders",
+        "back": "⬅️ Back",
+        "stars_header": "⭐ Choose a Stars package:",
+        "premium_header": "💎 Choose Telegram Premium duration:",
+        "my_orders_empty": "You don't have any orders yet.",
+        "my_orders_header": "📦 <b>Your recent orders:</b>\n",
+        "status_awaiting_payment": "⏳ Awaiting payment",
+        "status_payment_review": "🔍 Payment under review",
+        "status_paid": "✅ Paid, preparing order",
+        "status_fulfilling": "🚚 In progress",
+        "status_completed": "🎉 Completed",
+        "status_rejected": "❌ Rejected",
+        "language_changed": "Language changed ✅",
+        "sub_required_text": "📢 To use the bot, please subscribe to our channel first:",
+        "sub_button": "📢 Go to channel",
+        "sub_check_button": "✅ I'm subscribed",
+        "sub_still_not": "You're not subscribed yet. Please join the channel first.",
+        "support_prompt": "💬 Write your message — an operator will reply soon:",
+        "support_sent": "✅ Message sent. An operator will reply soon.",
+        "menu_support": "💬 Support / Operator",
+        "no_username_error": (
+            "You don't have a public username — set one in Telegram settings "
+            "or specify a different @username."
+        ),
+        "proof_received": (
+            "✅ Receipt received! Your order was sent to the admin for review.\n\n"
+            "⏳ <b>Your order is being processed, please wait</b> — "
+            "orders are usually completed within 3-10 minutes."
+        ),
+        "order_completed": (
+            "🎉 <b>Order #{order_id} ({item_name}) completed!</b>\n"
+            "Thanks for your purchase 🙌\n\n"
+            "We'll be waiting for you again! 🤗"
+        ),
+        "order_rejected": (
+            "❌ Payment for order #{order_id} was not confirmed.\n"
+            "If you think this is a mistake — contact the operator."
+        ),
+        "payment_confirmed": "✅ Payment for order #{order_id} confirmed! We're starting fulfillment.",
     },
 }
-TRANSLATIONS["kk"] = TRANSLATIONS["ru"]
-TRANSLATIONS["tj"] = TRANSLATIONS["ru"]
-TRANSLATIONS["en"] = TRANSLATIONS["ru"]
 
 
 def t(lang: str | None, key: str) -> str:

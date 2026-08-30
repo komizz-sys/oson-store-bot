@@ -31,6 +31,16 @@ async def main():
     dp.include_router(user.router)
 
     await bot.delete_webhook(drop_pending_updates=True)
+
+    # Сбрасываем старый Menu Button, если он был установлен раньше — иначе
+    # он остаётся висеть в Telegram даже после удаления кода, который его
+    # ставил, и создаёт путаницу с новой кнопкой-клавиатурой магазина.
+    from aiogram.types import MenuButtonDefault
+    try:
+        await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+    except Exception:
+        pass
+
     await dp.start_polling(bot)
 
 

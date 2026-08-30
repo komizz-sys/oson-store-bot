@@ -7,6 +7,8 @@ from aiogram.types import Message
 from handlers.states import OrderStates
 from keyboards.user_kb import confirm_order_kb
 from services.prices import format_uzs
+from services.i18n import t
+from database.db import get_user_language
 
 router = Router()
 
@@ -21,12 +23,23 @@ async def handle_web_app_data(message: Message, state: FSMContext):
 
     category = payload.get("category")
     recipient = (payload.get("recipient") or "").strip()
+    recipient_type = payload.get("recipient_type", "friend")
+
+    if recipient_type == "self" or not recipient:
+        # "Себе" — берём @username с сервера (message.from_user всегда точен,
+        # в отличие от tg.initDataUnsafe на клиенте, который иногда не заполнен)
+        if message.from_user.username:
+            recipient = "@" + message.from_user.username
+        else:
+            recipient = ""
+
     if recipient and not recipient.startswith("@"):
         recipient = "@" + recipient
     note = (payload.get("note") or "").strip()
 
     if not recipient:
-        await message.answer("Не удалось определить получателя. Откройте магазин заново и укажите @username.")
+        lang = await get_user_language(message.from_user.id)
+        await message.answer(t(lang, "no_username_error"))
         return
 
     if category in ("stars", "premium", "simple_gift"):

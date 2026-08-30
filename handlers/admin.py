@@ -13,6 +13,8 @@ from services.fragment_service import try_auto_fulfill_stars, notify_manual_prem
 from services.marketapp_service import start_rent_payment
 from services.telegram_gifts import fulfill_simple_gift
 from services.public_channel import post_completed_order
+from services.i18n import t
+from database.db import get_user_language as _get_user_language
 
 router = Router()
 
@@ -121,9 +123,10 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
     )
     await call.answer("Подтверждено")
 
+    lang = await _get_user_language(order["user_id"])
     await bot.send_message(
         order["user_id"],
-        f"✅ Оплата по заказу #{order_id} подтверждена! Приступаем к выполнению.",
+        t(lang, "payment_confirmed").format(order_id=order_id),
     )
 
     # Выполнение в зависимости от категории
@@ -142,7 +145,11 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
         success, note = await fulfill_simple_gift(bot, order)
         if success:
             await set_order_status(order_id, "completed")
-            await bot.send_message(order["user_id"], f"🎉 Заказ #{order_id} выполнен! {note}")
+            lang = await _get_user_language(order["user_id"])
+            await bot.send_message(
+                order["user_id"],
+                t(lang, "order_completed").format(order_id=order_id, item_name=order["item_name"]),
+            )
             await post_completed_order(bot, order)
         for admin_id in config.ADMIN_IDS:
             try:
@@ -167,10 +174,10 @@ async def reject_payment(call: CallbackQuery, bot: Bot):
     await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n❌ Отклонено")
     await call.answer("Отклонено")
 
+    lang = await _get_user_language(order["user_id"])
     await bot.send_message(
         order["user_id"],
-        f"❌ Оплата по заказу #{order_id} не подтверждена. "
-        "Свяжитесь с поддержкой, если считаете это ошибкой.",
+        t(lang, "order_rejected").format(order_id=order_id),
     )
 
 
@@ -186,8 +193,9 @@ async def mark_done(call: CallbackQuery, bot: Bot):
     await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n🎉 Выполнено")
     await call.answer("Отмечено как выполнено")
 
+    lang = await _get_user_language(order["user_id"])
     await bot.send_message(
         order["user_id"],
-        f"🎉 Заказ #{order_id} ({order['item_name']}) выполнен! Спасибо за покупку 🙌",
+        t(lang, "order_completed").format(order_id=order_id, item_name=order["item_name"]),
     )
     await post_completed_order(bot, order)
