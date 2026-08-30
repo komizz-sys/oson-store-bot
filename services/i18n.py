@@ -44,6 +44,13 @@ TRANSLATIONS = {
         "status_completed": "🎉 Bajarildi",
         "status_rejected": "❌ Rad etildi",
         "language_changed": "Til o'zgartirildi ✅",
+        "sub_required_text": "📢 Botdan foydalanish uchun avval kanalimizga a'zo bo'ling:",
+        "sub_button": "📢 Kanalga o'tish",
+        "sub_check_button": "✅ A'zo bo'ldim",
+        "sub_still_not": "Hali a'zo bo'lmagansiz. Avval kanalga o'ting.",
+        "support_prompt": "💬 Xabaringizni yozing — operator tez orada javob beradi:",
+        "support_sent": "✅ Xabaringiz yuborildi. Operator tez orada javob beradi.",
+        "menu_support": "💬 Yordam / Operator",
     },
     "ru": {
         "choose_language": "Выберите язык:",
@@ -71,6 +78,13 @@ TRANSLATIONS = {
         "status_completed": "🎉 Выполнен",
         "status_rejected": "❌ Отклонён",
         "language_changed": "Язык изменён ✅",
+        "sub_required_text": "📢 Чтобы пользоваться ботом, сначала подпишитесь на наш канал:",
+        "sub_button": "📢 Перейти в канал",
+        "sub_check_button": "✅ Я подписался",
+        "sub_still_not": "Вы ещё не подписаны. Сначала перейдите в канал.",
+        "support_prompt": "💬 Напишите ваше сообщение — оператор скоро ответит:",
+        "support_sent": "✅ Сообщение отправлено. Оператор скоро ответит.",
+        "menu_support": "💬 Поддержка / Оператор",
     },
 }
 TRANSLATIONS["kk"] = TRANSLATIONS["ru"]

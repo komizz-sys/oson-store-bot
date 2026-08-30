@@ -3,9 +3,10 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
 from database.db import upsert_user, get_user_orders, get_user_language, set_user_language
-from keyboards.user_kb import main_menu_kb, language_select_kb
+from keyboards.user_kb import main_menu_kb, language_select_kb, webapp_reply_kb, subscribe_gate_kb
 from services.prices import format_uzs
 from services.i18n import t
+from services.subscription import is_subscribed
 
 router = Router()
 
@@ -19,20 +20,41 @@ STATUS_KEYS = {
 }
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-    await upsert_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name)
-
-    lang = await get_user_language(message.from_user.id)
+async def _show_main_menu(message_or_call_message, user_id: int):
+    lang = await get_user_language(user_id)
     if not lang:
-        # Новый пользователь (или ещё не выбирал язык) — сначала спрашиваем язык
-        await message.answer(
+        await message_or_call_message.answer(
             "🌐 Tilni tanlang / Выберите язык / Choose language:",
             reply_markup=language_select_kb(),
         )
         return
+    await message_or_call_message.answer(t(lang, "welcome"), reply_markup=main_menu_kb(lang))
+    kb = webapp_reply_kb(lang)
+    if kb:
+        await message_or_call_message.answer(t(lang, "menu_webapp"), reply_markup=kb)
 
-    await message.answer(t(lang, "welcome"), reply_markup=main_menu_kb(lang))
+
+@router.message(CommandStart())
+async def cmd_start(message: Message):
+    await upsert_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name)
+
+    if not await is_subscribed(message.bot, message.from_user.id):
+        lang = await get_user_language(message.from_user.id)
+        await message.answer(t(lang, "sub_required_text"), reply_markup=subscribe_gate_kb(lang))
+        return
+
+    await _show_main_menu(message, message.from_user.id)
+
+
+@router.callback_query(F.data == "check_sub")
+async def check_sub_cb(call: CallbackQuery):
+    if not await is_subscribed(call.bot, call.from_user.id):
+        lang = await get_user_language(call.from_user.id)
+        await call.answer(t(lang, "sub_still_not"), show_alert=True)
+        return
+
+    await call.answer("✅")
+    await _show_main_menu(call.message, call.from_user.id)
 
 
 @router.callback_query(F.data.startswith("setlang:"))
@@ -42,6 +64,9 @@ async def set_language(call: CallbackQuery):
 
     await call.message.edit_text(t(lang, "language_changed"))
     await call.message.answer(t(lang, "welcome"), reply_markup=main_menu_kb(lang))
+    kb = webapp_reply_kb(lang)
+    if kb:
+        await call.message.answer(t(lang, "menu_webapp"), reply_markup=kb)
     await call.answer()
 
 

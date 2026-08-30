@@ -8,7 +8,7 @@ const I18N = {
     history_empty: "Hozircha xaridlar tarixi bo'sh.", history_hint: "To'liq tarix - botdagi \"Mening buyurtmalarim\" bo'limida.",
     top_title: "Reyting", top_subtitle: "Eng faol mijozlar", top_forming: "Reyting shakllanmoqda", top_hint: "Birinchi xaridni amalga oshiring!",
     referral_title: "Referal tizimi", referral_subtitle: "Do'stlaringizni taklif qiling!", referral_link_label: "Sizning referal havolangiz:", referral_copy: "Havolani nusxalash",
-    profile_operator: "Operator",
+    profile_operator: "Operator", profile_channel: "📢 Bot kanali", profile_orders_channel: "🛒 Savdo/Orderlar",
     nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_referral: "Referal", nav_profile: "Profil",
     modal_to_whom: "Kimga?", modal_to_self: "O'zimga", modal_to_friend: "Do'stimga",
     modal_recipient_label: "Qabul qiluvchi (@username):", modal_message_label: "Xabar (ixtiyoriy):",
@@ -18,13 +18,16 @@ const I18N = {
     err_username: "Username kiriting", err_no_username: "Sizda public username yo'q. Telegram sozlamalaridan o'rnating yoki \"Do'stimga\" tanlang.",
     rent_terms: (fee, refund) => "Xizmat haqi: ~" + fee + ". Ijara tugagach ~" + refund + " qaytariladi.",
     copied: "Nusxalandi!", empty: "Hozircha bo'sh.", rent_days_suffix: "kun", rent_from: "dan", rent_btn: "Ijaraga olish",
+    modal_preview: "Telegram-da ko'rish",
+    sort_recent: "Yangilanganlar", sort_price_asc: "Narx: arzon", sort_price_min: "Narx: min",
+    sort_duration_asc: "Muddat: qisqa", sort_duration_desc: "Muddat: uzun",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
     history_empty: "Пока пусто.", history_hint: "Полная история - в разделе «Мои заказы» в боте.",
     top_title: "Рейтинг", top_subtitle: "Самые активные клиенты", top_forming: "Рейтинг формируется", top_hint: "Сделайте первую покупку!",
     referral_title: "Реферальная система", referral_subtitle: "Приглашай друзей и получай бонусы!", referral_link_label: "Твоя реферальная ссылка:", referral_copy: "Скопировать ссылку",
-    profile_operator: "Оператор",
+    profile_operator: "Оператор", profile_channel: "📢 Канал бота", profile_orders_channel: "🛒 Заказы/Отзывы",
     nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_referral: "Рефералы", nav_profile: "Профиль",
     modal_to_whom: "Кому?", modal_to_self: "Себе", modal_to_friend: "Другу",
     modal_recipient_label: "Получатель (@username):", modal_message_label: "Сообщение (необязательно):",
@@ -34,6 +37,9 @@ const I18N = {
     err_username: "Введите username", err_no_username: "У вас нет публичного username. Установите в настройках Telegram или выберите \"Другу\".",
     rent_terms: (fee, refund) => "Сервисный сбор: ~" + fee + ". После окончания аренды вернётся ~" + refund + ".",
     copied: "Скопировано!", empty: "Пока пусто.", rent_days_suffix: "дн.", rent_from: "от", rent_btn: "Арендовать",
+    modal_preview: "Смотреть в Telegram",
+    sort_recent: "Недавно обновлённые", sort_price_asc: "Цена: дешевле", sort_price_min: "Цена: мин",
+    sort_duration_asc: "Срок: короче", sort_duration_desc: "Срок: длиннее",
   },
 };
 I18N.kk = I18N.ru; I18N.tj = I18N.ru; I18N.en = I18N.ru; // TODO: отдельные переводы
@@ -78,10 +84,12 @@ function fmtUZS(n) { return Math.round(n).toLocaleString("ru-RU").replace(/,/g, 
 const catalog = { stars: [], premium: [], simple_gift: [], nft_rent: [] };
 let currentCategory = "stars";
 let currentTab = "asosiy";
+let currentRentSort = "recently_touch";
 
-async function loadCatalog(cat) {
-  if (catalog[cat].length) return catalog[cat];
-  const res = await fetch("/api/" + cat);
+async function loadCatalog(cat, forceReload) {
+  if (catalog[cat].length && !forceReload) return catalog[cat];
+  const url = cat === "nft_rent" ? "/api/nft_rent?sort_by=" + currentRentSort : "/api/" + cat;
+  const res = await fetch(url);
   if (!res.ok) throw new Error("bad response " + cat);
   const data = await res.json();
   catalog[cat] = data.map(normalizeItem(cat));
@@ -93,7 +101,7 @@ function normalizeItem(cat) {
     if (cat === "stars") return { kind: "stars", title: raw.amount.toLocaleString("ru-RU") + " Stars", price: raw.price_uzs, emoji: "⭐️", raw: raw };
     if (cat === "premium") return { kind: "premium", title: raw.label, price: raw.price_uzs, emoji: "👑", raw: raw };
     if (cat === "simple_gift") return { kind: "simple_gift", title: raw.star_count + "⭐", price: raw.price_uzs, emoji: raw.sticker_emoji || "🎁", raw: raw };
-    if (cat === "nft_rent") return { kind: "nft_rent", title: raw.name, price: raw.price_per_day_uzs_with_markup, emoji: pickGiftEmoji(raw.name), image: raw.image_url, raw: raw };
+    if (cat === "nft_rent") return { kind: "nft_rent", title: raw.name, price: raw.price_per_day_uzs_with_markup, emoji: pickGiftEmoji(raw.name), image: raw.image_url, previewUrl: raw.preview_url, raw: raw };
   };
 }
 
@@ -137,11 +145,11 @@ async function renderItems() {
 
 // Карточка аренды в стиле MarketApp: картинка-плейсхолдер с бейджем срока,
 // название, цена + "so'm" + "· N kun", кнопка "Ijaraga olish"
-async function renderIjara() {
+async function renderIjara(forceReload) {
   const grid = document.getElementById("ijara-grid");
-  grid.innerHTML = skeletonHTML(4, "h-64");
+  grid.innerHTML = skeletonHTML(4, "h-80");
   let items;
-  try { items = await loadCatalog("nft_rent"); }
+  try { items = await loadCatalog("nft_rent", forceReload); }
   catch (e) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
   if (!items.length) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
@@ -149,32 +157,32 @@ async function renderIjara() {
   grid.innerHTML = items.map(function(it, i) {
     const imgBlock = it.image
       ? '<img src="' + it.image + '" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />' +
-        '<div class="absolute inset-0 hidden items-center justify-center"><span class="text-5xl animated-gift">' + it.emoji + '</span></div>'
-      : '<div class="absolute inset-0 flex items-center justify-center"><span class="text-5xl animated-gift">' + it.emoji + '</span></div>';
+        '<div class="absolute inset-0 hidden items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>'
+      : '<div class="absolute inset-0 flex items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>';
 
     const discountBadge = it.raw.discount_per_day > 0
-      ? '<span class="absolute top-2 right-2 bg-red-500/80 backdrop-blur text-[9px] font-bold px-1.5 py-0.5 rounded-md text-white">-' + it.raw.discount_per_day + '%</span>'
+      ? '<span class="absolute top-2 right-2 bg-red-500/80 backdrop-blur text-[10px] font-bold px-2 py-1 rounded-lg text-white">-' + it.raw.discount_per_day + '%</span>'
       : '';
 
     const numberBadge = it.raw.number
-      ? '<span class="text-[10px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
+      ? '<span class="text-[11px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
       : '';
 
     return '<div class="bg-[#0d1424] border border-white/10 rounded-2xl overflow-hidden flex flex-col">' +
-      '<div class="rent-img relative h-32">' +
+      '<div class="rent-img relative h-44">' +
         imgBlock +
         discountBadge +
-        '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[9px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
+        '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[10px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
           t("rent_from") + ' ' + it.raw.min_duration_days + '-' + it.raw.max_duration_days + ' ' + t("rent_days_suffix") +
         '</span>' +
       '</div>' +
-      '<div class="p-3 flex flex-col gap-1">' +
+      '<div class="p-3.5 flex flex-col gap-1.5">' +
         '<div class="flex items-center justify-between">' +
-          '<div class="text-xs font-bold text-white truncate">' + it.title + '</div>' +
+          '<div class="text-sm font-bold text-white truncate">' + it.title + '</div>' +
           numberBadge +
         '</div>' +
-        '<div class="text-xs font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[10px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
-        '<button data-i="' + i + '" class="rent-btn mt-1.5 w-full py-2 rounded-xl bg-neon-blue font-bold text-white text-xs active:scale-95 transition-all">' + t("rent_btn") + '</button>' +
+        '<div class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[11px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
+        '<button data-i="' + i + '" class="rent-btn mt-2 w-full py-2.5 rounded-xl bg-neon-blue font-bold text-white text-sm active:scale-95 transition-all">' + t("rent_btn") + '</button>' +
       '</div>' +
     '</div>';
   }).join("");
@@ -183,6 +191,12 @@ async function renderIjara() {
     btn.addEventListener("click", function() { openModal(items[Number(btn.dataset.i)]); });
   });
 }
+
+document.getElementById("rent-sort-select").addEventListener("change", function(e) {
+  currentRentSort = e.target.value;
+  catalog.nft_rent = []; // сбрасываем кэш — грузим заново с новой сортировкой
+  renderIjara(true);
+});
 
 function skeletonHTML(n, heightClass) {
   let out = "";
@@ -269,6 +283,18 @@ async function openModal(item) {
   document.getElementById("rent-days-field").classList.toggle("hidden", item.kind !== "nft_rent");
   if (item.kind === "nft_rent") document.getElementById("days-value").textContent = rentDays;
 
+  const previewBtn = document.getElementById("preview-gift-btn");
+  if (item.kind === "nft_rent" && item.previewUrl) {
+    previewBtn.classList.remove("hidden");
+    previewBtn.onclick = function() {
+      if (tg && tg.openTelegramLink) tg.openTelegramLink(item.previewUrl);
+      else window.open(item.previewUrl, "_blank");
+    };
+  } else {
+    previewBtn.classList.add("hidden");
+    previewBtn.onclick = null;
+  }
+
   try {
     const pay = await getPaymentInfo();
     document.getElementById("pay-card-number").textContent = pay.card_number || "—";
@@ -312,9 +338,34 @@ function copyReferral() {
   if (tg && tg.showAlert) tg.showAlert(t("copied")); else alert(t("copied"));
 }
 
-function openOperatorChat() {
-  const handle = document.getElementById("operator-handle").textContent;
-  if (handle && handle !== "—" && tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + handle.replace("@", ""));
+function openTgUsername(username) {
+  if (!username) return;
+  if (tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + username);
+  else window.open("https://t.me/" + username, "_blank");
+}
+
+async function initSupportInfo() {
+  try {
+    const res = await fetch("/api/support_info");
+    const info = await res.json();
+
+    if (info.operator_username) {
+      document.getElementById("operator-handle").textContent = "@" + info.operator_username;
+      document.getElementById("row-operator").onclick = function() { openTgUsername(info.operator_username); };
+    }
+    if (info.channel_username) {
+      const row = document.getElementById("row-channel");
+      row.classList.remove("hidden"); row.classList.add("flex");
+      document.getElementById("channel-handle").textContent = "@" + info.channel_username;
+      row.onclick = function() { openTgUsername(info.channel_username); };
+    }
+    if (info.orders_channel_username) {
+      const row = document.getElementById("row-orders");
+      row.classList.remove("hidden"); row.classList.add("flex");
+      document.getElementById("orders-handle").textContent = "@" + info.orders_channel_username;
+      row.onclick = function() { openTgUsername(info.orders_channel_username); };
+    }
+  } catch (e) { /* тихо игнорируем — строки просто останутся скрытыми/пустыми */ }
 }
 
 /* ---------------- Отправка заказа боту ---------------- */
@@ -385,7 +436,6 @@ async function initReferral() {
     const data = await res.json();
     const ref = u ? "https://t.me/" + data.username + "?start=ref" + u.id : "https://t.me/" + data.username;
     document.getElementById("referral-link").textContent = ref;
-    document.getElementById("operator-handle").textContent = "@admin";
   } catch (e) { /* тихо игнорируем */ }
 }
 
@@ -401,3 +451,4 @@ async function renderRentTerms() {
 applyI18n();
 initProfile();
 initReferral();
+initSupportInfo();

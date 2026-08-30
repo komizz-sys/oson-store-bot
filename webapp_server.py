@@ -59,8 +59,8 @@ async def api_simple_gift():
 
 
 @app.get("/api/nft_rent")
-async def api_nft_rent():
-    return await get_available_gifts(limit=15)
+async def api_nft_rent(sort_by: str = "recently_touch"):
+    return await get_available_gifts(limit=15, sort_by=sort_by)
 
 
 @app.get("/api/payment_info")
@@ -95,6 +95,19 @@ async def api_bot_info():
             r.raise_for_status()
             _bot_username_cache = r.json()["result"]["username"]
     return {"username": _bot_username_cache}
+
+
+@app.get("/api/support_info")
+async def api_support_info():
+    """Контакты для раздела Profil: оператор + каналы. Пустая строка — строка скрывается на фронте."""
+    def clean(v: str) -> str:
+        return v.lstrip("@") if v else ""
+
+    return {
+        "operator_username": clean(config.OPERATOR_USERNAME),
+        "channel_username": clean(config.REQUIRED_CHANNEL) if config.REQUIRED_CHANNEL.startswith("@") else "",
+        "orders_channel_username": clean(config.PUBLIC_ORDERS_CHANNEL) if config.PUBLIC_ORDERS_CHANNEL.startswith("@") else "",
+    }
 
 
 # Статика мини-аппа — подключаем последней, чтобы не перекрывать /api/*

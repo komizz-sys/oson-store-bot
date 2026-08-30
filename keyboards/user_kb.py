@@ -1,9 +1,13 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import config
 from services.prices import get_stars_packages, get_premium_packages, get_nft_rent_items, format_uzs
 from services.i18n import t, LANGUAGES
+from services.subscription import channel_link
 
 
 def language_select_kb() -> InlineKeyboardMarkup:
@@ -14,15 +18,39 @@ def language_select_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def webapp_reply_kb(lang: str | None = None) -> ReplyKeyboardMarkup | None:
+    """
+    Кнопка клавиатуры чата, открывающая мини-апп — ЕДИНСТВЕННЫЙ способ,
+    которым Telegram позволяет мини-аппу отправить sendData() обратно в чат.
+    Через inline-кнопку или Menu Button это технически не работает —
+    приложение просто закрывается, ничего не передав боту.
+    """
+    if not config.WEBAPP_URL:
+        return None
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t(lang, "menu_webapp"), web_app=WebAppInfo(url=config.WEBAPP_URL))]],
+        resize_keyboard=True,
+    )
+
+
+def subscribe_gate_kb(lang: str | None = None) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    link = channel_link()
+    if link:
+        b.button(text=t(lang, "sub_button"), url=link)
+    b.button(text=t(lang, "sub_check_button"), callback_data="check_sub")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def main_menu_kb(lang: str | None = None) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    if config.WEBAPP_URL:
-        b.button(text=t(lang, "menu_webapp"), web_app=WebAppInfo(url=config.WEBAPP_URL))
     b.button(text=t(lang, "menu_stars"), callback_data="menu:stars")
     b.button(text=t(lang, "menu_premium"), callback_data="menu:premium")
     b.button(text=t(lang, "menu_simple_gift"), callback_data="menu:simple_gift")
     b.button(text=t(lang, "menu_nft_rent"), callback_data="menu:nft_rent")
     b.button(text=t(lang, "menu_my_orders"), callback_data="menu:my_orders")
+    b.button(text=t(lang, "menu_support"), callback_data="menu:support")
     b.adjust(1)
     return b.as_markup()
 

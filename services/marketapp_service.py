@@ -7,8 +7,11 @@
 никогда не хранит ключи и не может потратить средства без твоего подтверждения.
 
 Картинки гифтов API MarketApp не отдаёт (в схеме RentItem их просто нет), поэтому
-подтягиваем их отдельно с nft.fragment.com — это публичный, задокументированный
-паттерн метаданных гифтов Fragment (name, image, lottie-анимация и т.д.).
+подтягиваем их отдельно с nft.fragment.com — публичный паттерн метаданных гифтов.
+
+Фильтр минимальной цены: среди листингов на MarketApp попадаются почти бесплатные
+("мусорные"/тестовые) лоты — без фильтра они вылезают первыми при сортировке по
+возрастанию цены. RENT_MIN_DISPLAY_UZS отсекает такие лоты из витрины.
 """
 
 import asyncio
@@ -23,8 +26,15 @@ from services.ton_deeplink import build_ton_deeplinks
 
 SECONDS_IN_DAY = 86400
 NANO_PER_GRAM = 1_000_000_000
+MAX_PAGES_TO_SCAN = 4  # сколько страниц API максимум пролистать, чтобы набрать limit валидных лотов
 
 _NAME_NUM_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
+
+# Разрешённые значения sort_by — прокидываются как есть в API MarketApp
+ALLOWED_SORT_BY = {
+    "price_per_day", "min_price", "duration_asc", "duration_desc",
+    "item_num_asc", "item_num_desc", "recently_touch",
+}
 
 
 def _slugify(title: str) -> str:
@@ -49,45 +59,81 @@ async def _fetch_gift_image(client: httpx.AsyncClient, nft_name: str) -> str | N
         return None
 
 
-async def get_available_gifts(limit: int = 10) -> list[dict]:
+async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch") -> list[dict]:
     """
     Живой список гифтов, доступных в аренду, с ценой/день в сумах (уже с наценкой)
-    и, если удалось получить, реальной картинкой гифта.
+    и, если удалось получить, реальной картинкой + ссылкой-превью гифта.
+
+    Листает страницы API (через cursor), пока не наберёт `limit` штук с ценой
+    не ниже RENT_MIN_DISPLAY_UZS, либо не кончится курсор/лимит страниц.
     """
+    if sort_by not in ALLOWED_SORT_BY:
+        sort_by = "recently_touch"
+
+    collected_raw: list[dict] = []
+    cursor = None
+
     try:
-        data = await marketapp_api.get_gifts_for_rent(sort_by="price_per_day")
+        for _ in range(MAX_PAGES_TO_SCAN):
+            data = await marketapp_api.get_gifts_for_rent(sort_by=sort_by, cursor=cursor)
+            items = data.get("items", [])
+            collected_raw.extend(items)
+
+            # Прикидываем, хватит ли уже валидных (с фильтром по минимальной цене)
+            valid_so_far = sum(
+                1 for it in collected_raw
+                if _price_uzs_preview(it) >= config.RENT_MIN_DISPLAY_UZS
+            )
+            cursor = data.get("cursor")
+            if valid_so_far >= limit or not cursor:
+                break
     except Exception:
         return []
 
-    raw_items = data.get("items", [])[:limit]
-
     async with httpx.AsyncClient() as client:
         images = await asyncio.gather(
-            *[_fetch_gift_image(client, it["nft_name"]) for it in raw_items],
+            *[_fetch_gift_image(client, it["nft_name"]) for it in collected_raw],
             return_exceptions=False,
         )
 
     result = []
-    for item, image_url in zip(raw_items, images):
+    for item, image_url in zip(collected_raw, images):
         base_price_per_day_gram = int(item["price_per_day"]) / NANO_PER_GRAM
         calc = calc_rent_price(base_price_per_day_gram, days=1)
+
+        if calc["with_markup"] < config.RENT_MIN_DISPLAY_UZS:
+            continue  # отсекаем почти бесплатные/мусорные лоты
 
         m = _NAME_NUM_RE.match(item["nft_name"] or "")
         title = m.group(1) if m else item["nft_name"]
         number = m.group(2) if m else None
+        slug = _slugify(title) if title else None
 
         result.append({
             "nft_address": item["nft_address"],
             "name": title,
             "number": number,
             "image_url": image_url,
+            # Официальный формат Telegram для просмотра гифта (как в самом приложении)
+            "preview_url": f"https://t.me/nft/{slug}-{number}" if slug and number else None,
             "discount_per_day": item.get("discount_per_day", 0),
             "base_price_per_day_gram": base_price_per_day_gram,
             "price_per_day_uzs_with_markup": calc["with_markup"],
             "min_duration_days": item["min_duration"] // SECONDS_IN_DAY,
             "max_duration_days": item["max_duration"] // SECONDS_IN_DAY,
         })
+        if len(result) >= limit:
+            break
+
     return result
+
+
+def _price_uzs_preview(raw_item: dict) -> int:
+    try:
+        gram = int(raw_item["price_per_day"]) / NANO_PER_GRAM
+        return calc_rent_price(gram, days=1)["with_markup"]
+    except Exception:
+        return 0
 
 
 def calc_rent_price(base_price_per_day_gram: float, days: int) -> dict:

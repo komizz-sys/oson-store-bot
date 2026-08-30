@@ -31,27 +31,86 @@ CREATE TABLE IF NOT EXISTS users (
 );
 """
 
+CREATE_SUPPORT_TABLE = """
+CREATE TABLE IF NOT EXISTS support_messages (
+    admin_id INTEGER NOT NULL,
+    admin_message_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    PRIMARY KEY (admin_id, admin_message_id)
+);
+"""
+
 
 async def init_db():
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute(CREATE_USERS_TABLE)
         await db.execute(CREATE_ORDERS_TABLE)
-        # Миграция для баз, созданных до появления языка пользователя
-        try:
-            await db.execute("ALTER TABLE users ADD COLUMN language TEXT")
-        except Exception:
-            pass  # колонка уже есть
+        await db.execute(CREATE_SUPPORT_TABLE)
+        # Миграции для баз, созданных до появления этих полей/таблиц
+        for stmt in (
+            "ALTER TABLE users ADD COLUMN language TEXT",
+            "ALTER TABLE users ADD COLUMN last_seen TEXT",
+        ):
+            try:
+                await db.execute(stmt)
+            except Exception:
+                pass  # уже есть
         await db.commit()
 
 
 async def upsert_user(user_id: int, username: str, full_name: str):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute(
-            """INSERT INTO users (user_id, username, full_name) VALUES (?, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, full_name=excluded.full_name""",
+            """INSERT INTO users (user_id, username, full_name, last_seen) VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, full_name=excluded.full_name,
+               last_seen=datetime('now')""",
             (user_id, username, full_name),
         )
         await db.commit()
+
+
+async def get_stats() -> dict:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as cur:
+            total_users = (await cur.fetchone())[0]
+        async with db.execute(
+            "SELECT COUNT(*) FROM users WHERE last_seen >= datetime('now', '-1 day')"
+        ) as cur:
+            active_24h = (await cur.fetchone())[0]
+        async with db.execute(
+            "SELECT COUNT(*) FROM users WHERE last_seen >= datetime('now', '-7 day')"
+        ) as cur:
+            active_7d = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM orders") as cur:
+            total_orders = (await cur.fetchone())[0]
+        async with db.execute("SELECT status, COUNT(*) FROM orders GROUP BY status") as cur:
+            by_status = {row[0]: row[1] async for row in cur}
+    return {
+        "total_users": total_users,
+        "active_24h": active_24h,
+        "active_7d": active_7d,
+        "total_orders": total_orders,
+        "orders_by_status": by_status,
+    }
+
+
+async def save_support_mapping(admin_id: int, admin_message_id: int, user_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO support_messages (admin_id, admin_message_id, user_id) VALUES (?, ?, ?)",
+            (admin_id, admin_message_id, user_id),
+        )
+        await db.commit()
+
+
+async def get_support_user(admin_id: int, admin_message_id: int) -> int | None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id FROM support_messages WHERE admin_id=? AND admin_message_id=?",
+            (admin_id, admin_message_id),
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else None
 
 
 async def get_user_language(user_id: int) -> str | None:
@@ -116,3 +175,9 @@ async def get_user_orders(user_id: int) -> list[dict]:
         ) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+
+async def get_all_user_ids() -> list[int]:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM users") as cur:
+            return [row[0] async for row in cur]

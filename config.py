@@ -36,6 +36,10 @@ TON_GRAM_RATE_UZS = int(os.getenv("TON_GRAM_RATE_UZS", "18250"))
 RENT_FEE_GRAM = float(os.getenv("RENT_FEE_GRAM", "0.1"))
 RENT_FEE_REFUND_PERCENT = int(os.getenv("RENT_FEE_REFUND_PERCENT", "40"))
 
+# Минимальная цена/день для показа гифта в аренде (сум) — отсекает "мусорные"/тестовые
+# лоты с почти нулевой ценой, которые иначе вылезают первыми при сортировке по цене
+RENT_MIN_DISPLAY_UZS = int(os.getenv("RENT_MIN_DISPLAY_UZS", "300"))
+
 # ---- Простые подарки (мишка/сердце/коробка и т.д.) ----
 # Цена = кол-во звёзд подарка * этот коэффициент (сум за 1 звезду, с наценкой 20%)
 STAR_UNIT_PRICE_UZS = float(os.getenv("STAR_UNIT_PRICE_UZS", "213.3"))
@@ -48,3 +52,10 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 # Можно указать @username канала (для публичных) или числовой ID (-100...) для приватных.
 # Бот должен быть добавлен в канал как администратор с правом публикации.
 PUBLIC_ORDERS_CHANNEL = os.getenv("PUBLIC_ORDERS_CHANNEL", "")
+
+# ---- Обязательная подписка на канал перед использованием бота ----
+REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "")
+REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK", "")
+
+# ---- Контакты в профиле мини-аппа ----
+OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "")

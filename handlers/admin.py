@@ -1,9 +1,12 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
+import asyncio
 
 import config
-from database.db import get_order, set_order_status
+from database.db import get_order, set_order_status, get_stats, get_all_user_ids
 from keyboards.admin_kb import admin_fulfill_kb
 from services.prices import format_uzs
 from services.fragment_service import try_auto_fulfill_stars, notify_manual_premium
@@ -12,6 +15,10 @@ from services.telegram_gifts import fulfill_simple_gift
 from services.public_channel import post_completed_order
 
 router = Router()
+
+
+class BroadcastStates(StatesGroup):
+    waiting_message = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -24,8 +31,74 @@ async def admin_help(message: Message):
         return
     await message.answer(
         "🛠 Админ-команды:\n"
+        "/stats — статистика по пользователям и заказам\n"
+        "/broadcast — разослать сообщение всем пользователям\n"
         "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n\n"
         "Подтверждение/отклонение оплаты — кнопками под чеком."
+    )
+
+
+@router.message(Command("broadcast"))
+async def broadcast_start(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(BroadcastStates.waiting_message)
+    await message.answer(
+        "✍️ Пришли сообщение (текст, фото, видео — что угодно), которое разослать "
+        "ВСЕМ пользователям бота. Для отмены — /cancel"
+    )
+
+
+@router.message(BroadcastStates.waiting_message, Command("cancel"))
+async def broadcast_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Рассылка отменена.")
+
+
+@router.message(BroadcastStates.waiting_message)
+async def broadcast_send(message: Message, state: FSMContext, bot: Bot):
+    await state.clear()
+    user_ids = await get_all_user_ids()
+
+    status_msg = await message.answer(f"⏳ Рассылаю {len(user_ids)} пользователям...")
+    sent, failed = 0, 0
+
+    for user_id in user_ids:
+        try:
+            await bot.copy_message(user_id, message.chat.id, message.message_id)
+            sent += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)  # не упереться в лимиты Telegram на массовую отправку
+
+    await status_msg.edit_text(f"✅ Разослано: {sent}\n❌ Не доставлено: {failed}")
+
+
+@router.message(Command("stats"))
+async def stats_cmd(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    s = await get_stats()
+    status_labels = {
+        "awaiting_payment": "Ожидают оплаты",
+        "payment_review": "На проверке",
+        "paid": "Оплачены",
+        "fulfilling": "Выполняются",
+        "completed": "Выполнены",
+        "rejected": "Отклонены",
+    }
+    status_lines = "\n".join(
+        f"  • {status_labels.get(k, k)}: {v}" for k, v in s["orders_by_status"].items()
+    ) or "  —"
+
+    await message.answer(
+        f"📊 <b>Статистика</b>\n\n"
+        f"👥 Всего пользователей: <b>{s['total_users']}</b>\n"
+        f"🟢 Активных за 24ч: <b>{s['active_24h']}</b>\n"
+        f"🟢 Активных за 7дн: <b>{s['active_7d']}</b>\n\n"
+        f"📦 Всего заказов: <b>{s['total_orders']}</b>\n"
+        f"{status_lines}"
     )
 
 

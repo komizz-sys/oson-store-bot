@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 import config
 from database.db import init_db
-from handlers import user, admin, order, payment, webapp
+from handlers import user, admin, order, payment, webapp, support
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,19 +24,13 @@ async def main():
 
     # Порядок важен: сначала специфичные роутеры, потом общие
     dp.include_router(admin.router)
+    dp.include_router(support.router)
     dp.include_router(webapp.router)
     dp.include_router(order.router)
     dp.include_router(payment.router)
     dp.include_router(user.router)
 
     await bot.delete_webhook(drop_pending_updates=True)
-
-    if config.WEBAPP_URL:
-        from aiogram.types import MenuButtonWebApp, WebAppInfo
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(text="🛍 Магазин", web_app=WebAppInfo(url=config.WEBAPP_URL))
-        )
-
     await dp.start_polling(bot)
 
 
