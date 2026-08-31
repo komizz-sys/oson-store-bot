@@ -23,6 +23,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def no_cache_headers(request, call_next):
+    """
+    Telegram WebView агрессивно кэширует статику мини-аппа — после деплоя
+    новой версии люди могут ещё долго видеть старую. Запрещаем кэш вообще,
+    чтобы обновления доходили сразу.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 _bot_username_cache: str | None = None
 
 
@@ -59,8 +73,8 @@ async def api_simple_gift():
 
 
 @app.get("/api/nft_rent")
-async def api_nft_rent(sort_by: str = "recently_touch"):
-    return await get_available_gifts(limit=15, sort_by=sort_by)
+async def api_nft_rent(sort_by: str = "recently_touch", cursor: str | None = None):
+    return await get_available_gifts(limit=15, sort_by=sort_by, cursor=cursor)
 
 
 @app.get("/api/payment_info")

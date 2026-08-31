@@ -36,7 +36,8 @@ async def show_nft_rent(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await call.message.edit_text("🔄 Загружаю актуальный список гифтов...")
 
-    gifts = await get_available_gifts(limit=10)
+    result = await get_available_gifts(limit=10)
+    gifts = result["items"]
     if not gifts:
         await call.message.edit_text(
             "😕 Не удалось получить список гифтов с MarketApp прямо сейчас. "

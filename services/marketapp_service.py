@@ -59,36 +59,38 @@ async def _fetch_gift_image(client: httpx.AsyncClient, nft_name: str) -> str | N
         return None
 
 
-async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch") -> list[dict]:
+async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch", cursor: str | None = None) -> dict:
     """
     Живой список гифтов, доступных в аренду, с ценой/день в сумах (уже с наценкой)
     и, если удалось получить, реальной картинкой + ссылкой-превью гифта.
 
     Листает страницы API (через cursor), пока не наберёт `limit` штук с ценой
     не ниже RENT_MIN_DISPLAY_UZS, либо не кончится курсор/лимит страниц.
+
+    -> {"items": [...], "next_cursor": str|None} — next_cursor передавай обратно
+    в cursor следующего вызова, чтобы догрузить ещё ("Показать ещё").
     """
     if sort_by not in ALLOWED_SORT_BY:
         sort_by = "recently_touch"
 
     collected_raw: list[dict] = []
-    cursor = None
+    next_cursor = cursor
 
     try:
         for _ in range(MAX_PAGES_TO_SCAN):
-            data = await marketapp_api.get_gifts_for_rent(sort_by=sort_by, cursor=cursor)
+            data = await marketapp_api.get_gifts_for_rent(sort_by=sort_by, cursor=next_cursor)
             items = data.get("items", [])
             collected_raw.extend(items)
 
-            # Прикидываем, хватит ли уже валидных (с фильтром по минимальной цене)
             valid_so_far = sum(
                 1 for it in collected_raw
                 if _price_uzs_preview(it) >= config.RENT_MIN_DISPLAY_UZS
             )
-            cursor = data.get("cursor")
-            if valid_so_far >= limit or not cursor:
+            next_cursor = data.get("cursor")
+            if valid_so_far >= limit or not next_cursor:
                 break
     except Exception:
-        return []
+        return {"items": [], "next_cursor": None}
 
     async with httpx.AsyncClient() as client:
         images = await asyncio.gather(
@@ -125,7 +127,7 @@ async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch") 
         if len(result) >= limit:
             break
 
-    return result
+    return {"items": result, "next_cursor": next_cursor}
 
 
 def _price_uzs_preview(raw_item: dict) -> int:

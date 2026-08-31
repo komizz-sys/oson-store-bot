@@ -21,6 +21,7 @@ const I18N = {
     modal_preview: "Telegram-da ko'rish",
     sort_recent: "Yangilari", sort_price_asc: "Narx: arzon", sort_price_desc: "Narx: qimmat", sort_price_min: "Narx: min",
     sort_duration_asc: "Muddat: qisqa", sort_duration_desc: "Muddat: uzun",
+    load_more: "Ko'proq ko'rsatish", premium_title: "Telegram Premium olish", premium_subtitle: "O'zingiz yoki yaqiningiz uchun", premium_get_suffix: "olish",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -40,6 +41,7 @@ const I18N = {
     modal_preview: "Смотреть в Telegram",
     sort_recent: "Новинки", sort_price_asc: "Цена: дешевле", sort_price_desc: "Цена: дороже", sort_price_min: "Цена: мин",
     sort_duration_asc: "Срок: короче", sort_duration_desc: "Срок: длиннее",
+    load_more: "Показать ещё", premium_title: "Оформить Telegram Premium", premium_subtitle: "Себе или близкому человеку", premium_get_suffix: "оформить",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -59,6 +61,7 @@ const I18N = {
     modal_preview: "View in Telegram",
     sort_recent: "Newest", sort_price_asc: "Price: cheapest", sort_price_desc: "Price: priciest", sort_price_min: "Price: min",
     sort_duration_asc: "Duration: shortest", sort_duration_desc: "Duration: longest",
+    load_more: "Show more", premium_title: "Get Telegram Premium", premium_subtitle: "For yourself or someone else", premium_get_suffix: "get",
   },
 };
 
@@ -106,20 +109,24 @@ let currentRentSort = "recently_touch";
 
 async function loadCatalog(cat, forceReload) {
   if (catalog[cat].length && !forceReload) return catalog[cat];
-
-  // "Narx: qimmat" (дороже) — API MarketApp такой сортировки не поддерживает,
-  // берём отсортированные по возрастанию цены и просто переворачиваем на клиенте
-  const isClientDesc = cat === "nft_rent" && currentRentSort === "price_desc_client";
-  const backendSort = isClientDesc ? "price_per_day" : currentRentSort;
-
-  const url = cat === "nft_rent" ? "/api/nft_rent?sort_by=" + backendSort : "/api/" + cat;
-  const res = await fetch(url);
+  const res = await fetch("/api/" + cat);
   if (!res.ok) throw new Error("bad response " + cat);
   const data = await res.json();
-  let mapped = data.map(normalizeItem(cat));
-  if (isClientDesc) mapped = mapped.slice().reverse();
-  catalog[cat] = mapped;
+  catalog[cat] = data.map(normalizeItem(cat));
   return catalog[cat];
+}
+
+async function fetchRentPage(cursor) {
+  const isClientDesc = currentRentSort === "price_desc_client";
+  const backendSort = isClientDesc ? "price_per_day" : currentRentSort;
+  let url = "/api/nft_rent?sort_by=" + backendSort;
+  if (cursor) url += "&cursor=" + encodeURIComponent(cursor);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("bad response nft_rent");
+  const data = await res.json();
+  let mapped = data.items.map(normalizeItem("nft_rent"));
+  if (isClientDesc) mapped = mapped.slice().reverse();
+  return { items: mapped, nextCursor: data.next_cursor };
 }
 
 function normalizeItem(cat) {
@@ -149,6 +156,11 @@ function pickGiftEmoji(name) {
 
 async function renderItems() {
   const grid = document.getElementById("products-grid");
+
+  if (currentCategory === "premium") { await renderPremiumList(); return; }
+  document.getElementById("premium-list").classList.add("hidden");
+  grid.classList.remove("hidden");
+
   grid.innerHTML = skeletonHTML(6, "h-24");
   let items;
   try { items = await loadCatalog(currentCategory); }
@@ -157,7 +169,7 @@ async function renderItems() {
   if (!items.length) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
   grid.innerHTML = items.map(function(it, i) {
-    return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10">' +
+    return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10 hover:border-white/20 shadow-lg shadow-black/20">' +
       '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>' +
       '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
       '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
@@ -169,60 +181,175 @@ async function renderItems() {
   });
 }
 
-// Карточка аренды в стиле MarketApp: картинка-плейсхолдер с бейджем срока,
-// название, цена + "so'm" + "· N kun", кнопка "Ijaraga olish"
-async function renderIjara(forceReload) {
+/* ---------------- Ijara (аренда) — с догрузкой страниц ---------------- */
+let rentNextCursor = null;
+let rentLoadingMore = false;
+
+// Карточка аренды в стиле MarketApp: картинка с бейджем срока, название,
+// цена + "so'm" + "· N kun", кнопка "Ijaraga olish". Кликается ВСЯ карточка,
+// не только кнопка.
+function rentCardHTML(it, i) {
+  const imgBlock = it.image
+    ? '<img src="' + it.image + '" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />' +
+      '<div class="absolute inset-0 hidden items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>'
+    : '<div class="absolute inset-0 flex items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>';
+
+  const discountBadge = it.raw.discount_per_day > 0
+    ? '<span class="absolute top-2 right-2 bg-red-500/80 backdrop-blur text-[10px] font-bold px-2 py-1 rounded-lg text-white">-' + it.raw.discount_per_day + '%</span>'
+    : '';
+
+  const numberBadge = it.raw.number
+    ? '<span class="text-[11px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
+    : '';
+
+  return '<div data-i="' + i + '" class="rent-card bg-[#0d1424] border border-white/10 rounded-2xl overflow-hidden flex flex-col cursor-pointer active:scale-[0.98] transition-all hover:border-white/20 shadow-lg shadow-black/20">' +
+    '<div class="rent-img relative h-44">' +
+      imgBlock +
+      discountBadge +
+      '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[10px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
+        t("rent_from") + ' ' + it.raw.min_duration_days + '-' + it.raw.max_duration_days + ' ' + t("rent_days_suffix") +
+      '</span>' +
+    '</div>' +
+    '<div class="p-3.5 flex flex-col gap-1.5">' +
+      '<div class="flex items-center justify-between">' +
+        '<div class="text-sm font-bold text-white truncate">' + it.title + '</div>' +
+        numberBadge +
+      '</div>' +
+      '<div class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[11px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
+      '<button data-i="' + i + '" class="rent-btn mt-2 w-full py-2.5 rounded-xl bg-gradient-to-r from-neon-blue to-blue-600 font-bold text-white text-sm active:scale-95 transition-all shadow-[0_4px_14px_rgba(59,130,246,0.35)]">' + t("rent_btn") + '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderRentGrid() {
   const grid = document.getElementById("ijara-grid");
-  grid.innerHTML = skeletonHTML(4, "h-80");
-  let items;
-  try { items = await loadCatalog("nft_rent", forceReload); }
-  catch (e) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  const items = catalog.nft_rent;
 
-  if (!items.length) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  grid.innerHTML = items.map(function(it, i) { return rentCardHTML(it, i); }).join("");
 
-  grid.innerHTML = items.map(function(it, i) {
-    const imgBlock = it.image
-      ? '<img src="' + it.image + '" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />' +
-        '<div class="absolute inset-0 hidden items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>'
-      : '<div class="absolute inset-0 flex items-center justify-center"><span class="text-6xl animated-gift">' + it.emoji + '</span></div>';
-
-    const discountBadge = it.raw.discount_per_day > 0
-      ? '<span class="absolute top-2 right-2 bg-red-500/80 backdrop-blur text-[10px] font-bold px-2 py-1 rounded-lg text-white">-' + it.raw.discount_per_day + '%</span>'
-      : '';
-
-    const numberBadge = it.raw.number
-      ? '<span class="text-[11px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
-      : '';
-
-    return '<div class="bg-[#0d1424] border border-white/10 rounded-2xl overflow-hidden flex flex-col">' +
-      '<div class="rent-img relative h-44">' +
-        imgBlock +
-        discountBadge +
-        '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[10px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
-          t("rent_from") + ' ' + it.raw.min_duration_days + '-' + it.raw.max_duration_days + ' ' + t("rent_days_suffix") +
-        '</span>' +
-      '</div>' +
-      '<div class="p-3.5 flex flex-col gap-1.5">' +
-        '<div class="flex items-center justify-between">' +
-          '<div class="text-sm font-bold text-white truncate">' + it.title + '</div>' +
-          numberBadge +
-        '</div>' +
-        '<div class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[11px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
-        '<button data-i="' + i + '" class="rent-btn mt-2 w-full py-2.5 rounded-xl bg-neon-blue font-bold text-white text-sm active:scale-95 transition-all">' + t("rent_btn") + '</button>' +
-      '</div>' +
-    '</div>';
-  }).join("");
-
+  Array.prototype.forEach.call(grid.querySelectorAll(".rent-card"), function(card) {
+    card.addEventListener("click", function(e) {
+      if (e.target.closest(".rent-btn")) return; // кнопка сама откроет — избегаем двойного триггера
+      openModal(items[Number(card.dataset.i)]);
+    });
+  });
   Array.prototype.forEach.call(grid.querySelectorAll(".rent-btn"), function(btn) {
     btn.addEventListener("click", function() { openModal(items[Number(btn.dataset.i)]); });
   });
+
+  renderLoadMoreButton();
+}
+
+function renderLoadMoreButton() {
+  const existing = document.getElementById("rent-load-more");
+  if (existing) existing.remove();
+
+  if (!rentNextCursor) return;
+
+  const btn = document.createElement("button");
+  btn.id = "rent-load-more";
+  btn.className = "col-span-2 mt-1 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 active:scale-95 transition-all";
+  btn.textContent = t("load_more");
+  btn.addEventListener("click", loadMoreRent);
+  document.getElementById("ijara-grid").appendChild(btn);
+}
+
+async function loadMoreRent() {
+  if (rentLoadingMore) return;
+  rentLoadingMore = true;
+  const btn = document.getElementById("rent-load-more");
+  if (btn) { btn.textContent = "..."; btn.disabled = true; }
+
+  try {
+    const page = await fetchRentPage(rentNextCursor);
+    catalog.nft_rent = catalog.nft_rent.concat(page.items);
+    rentNextCursor = page.nextCursor;
+    renderRentGrid();
+  } catch (e) { /* тихо игнорируем — кнопка просто останется */ }
+
+  rentLoadingMore = false;
+}
+
+async function renderIjara(reset) {
+  const grid = document.getElementById("ijara-grid");
+
+  if (reset || !catalog.nft_rent.length) {
+    grid.innerHTML = skeletonHTML(4, "h-80");
+    catalog.nft_rent = [];
+    rentNextCursor = null;
+
+    try {
+      const page = await fetchRentPage(null);
+      catalog.nft_rent = page.items;
+      rentNextCursor = page.nextCursor;
+    } catch (e) {
+      grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>';
+      return;
+    }
+  }
+
+  if (!catalog.nft_rent.length) { grid.innerHTML = '<p class="col-span-2 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  renderRentGrid();
 }
 
 document.getElementById("rent-sort-select").addEventListener("change", function(e) {
   currentRentSort = e.target.value;
-  catalog.nft_rent = []; // сбрасываем кэш — грузим заново с новой сортировкой
   renderIjara(true);
 });
+
+/* ---------------- Premium: список с радио-выбором ---------------- */
+let selectedPremiumIndex = 0;
+
+async function renderPremiumList() {
+  document.getElementById("products-grid").classList.add("hidden");
+  const container = document.getElementById("premium-list");
+  container.classList.remove("hidden");
+
+  const optionsEl = document.getElementById("premium-options");
+  optionsEl.innerHTML = skeletonHTML(3, "h-16");
+
+  let items;
+  try { items = await loadCatalog("premium"); }
+  catch (e) { optionsEl.innerHTML = '<p class="text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+
+  if (!items.length) { optionsEl.innerHTML = '<p class="text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  if (selectedPremiumIndex >= items.length) selectedPremiumIndex = 0;
+
+  function paint() {
+    optionsEl.innerHTML = items.map(function(it, i) {
+      const selected = i === selectedPremiumIndex;
+      return '<div data-i="' + i + '" class="premium-option flex items-center justify-between gap-3 rounded-2xl p-3.5 cursor-pointer transition-all border ' +
+        (selected ? "bg-neon-blue/10 border-neon-blue" : "bg-white/5 border-white/10") + '">' +
+        '<div class="flex items-center gap-3">' +
+          '<span class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ' + (selected ? "border-neon-blue" : "border-gray-500") + '">' +
+            (selected ? '<span class="w-2.5 h-2.5 rounded-full bg-neon-blue"></span>' : "") +
+          '</span>' +
+          '<span class="text-xl">👑</span>' +
+          '<span class="text-sm font-semibold text-white">' + it.title + '</span>' +
+        '</div>' +
+        '<span class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + '</span>' +
+      '</div>';
+    }).join("");
+
+    Array.prototype.forEach.call(optionsEl.querySelectorAll(".premium-option"), function(row) {
+      row.addEventListener("click", function() {
+        selectedPremiumIndex = Number(row.dataset.i);
+        paint();
+        updatePremiumCta();
+      });
+    });
+  }
+
+  function updatePremiumCta() {
+    const btn = document.getElementById("premium-cta-btn");
+    const it = items[selectedPremiumIndex];
+    btn.textContent = it.title + " " + t("premium_get_suffix");
+    btn.onclick = function() { openModal(it); };
+  }
+
+  paint();
+  updatePremiumCta();
+}
 
 function skeletonHTML(n, heightClass) {
   let out = "";

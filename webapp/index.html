@@ -76,6 +76,19 @@
       <button onclick="setCategory('simple_gift')" id="cat-simple_gift" class="cat-btn px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs whitespace-nowrap text-gray-300">Gift</button>
     </div>
     <main id="products-grid" class="p-4 grid grid-cols-3 gap-3 max-w-sm mx-auto"></main>
+
+    <!-- Premium: отдельный экран со списком (радио-кнопки), не сетка карточек -->
+    <div id="premium-list" class="hidden px-4 pb-4">
+      <div class="bg-gradient-to-r from-purple-900/40 to-blue-900/40 border border-purple-500/20 rounded-2xl p-5 mb-4 text-center">
+        <div class="text-4xl mb-2">💎</div>
+        <div class="text-base font-bold text-white" data-i18n="premium_title">Telegram Premium olish</div>
+        <div class="text-xs text-gray-400 mt-1" data-i18n="premium_subtitle">O'zingiz yoki yaqiningiz uchun</div>
+      </div>
+      <div id="premium-options" class="space-y-2 mb-4"></div>
+      <button id="premium-cta-btn" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-neon-blue to-neon-purple font-bold text-white text-sm shadow-[0_4px_20px_rgba(168,85,247,0.35)] active:scale-95 transition-all">
+        …
+      </button>
+    </div>
   </div>
 
   <!-- ================= IJARA ================= -->
