@@ -29,4 +29,5 @@
     {"label": "6 месяцев", "price_uzs": 230000},
     {"label": "12 месяцев (akkauntga kirib)", "price_uzs": 300000},
     {"label": "12 месяцев (akkauntga kirmasdan)", "price_uzs": 400000}
-  ],
+  ]
+}
