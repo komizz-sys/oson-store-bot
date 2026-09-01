@@ -22,6 +22,8 @@ const I18N = {
     sort_recent: "Yangilari", sort_price_asc: "Narx: arzon", sort_price_desc: "Narx: qimmat", sort_price_min: "Narx: min",
     sort_duration_asc: "Muddat: qisqa", sort_duration_desc: "Muddat: uzun",
     load_more: "Ko'proq ko'rsatish", premium_title: "Telegram Premium olish", premium_subtitle: "O'zingiz yoki yaqiningiz uchun", premium_get_suffix: "olish",
+    custom_amount: "Boshqa miqdor", custom_amount_hint: "O'zingiz kiriting", custom_amount_label: "Nechta Stars?",
+    recent_recipient_label: "Yaqinda:",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -42,6 +44,8 @@ const I18N = {
     sort_recent: "Новинки", sort_price_asc: "Цена: дешевле", sort_price_desc: "Цена: дороже", sort_price_min: "Цена: мин",
     sort_duration_asc: "Срок: короче", sort_duration_desc: "Срок: длиннее",
     load_more: "Показать ещё", premium_title: "Оформить Telegram Premium", premium_subtitle: "Себе или близкому человеку", premium_get_suffix: "оформить",
+    custom_amount: "Другое количество", custom_amount_hint: "Введите сами", custom_amount_label: "Сколько звёзд?",
+    recent_recipient_label: "Недавнее:",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -62,6 +66,8 @@ const I18N = {
     sort_recent: "Newest", sort_price_asc: "Price: cheapest", sort_price_desc: "Price: priciest", sort_price_min: "Price: min",
     sort_duration_asc: "Duration: shortest", sort_duration_desc: "Duration: longest",
     load_more: "Show more", premium_title: "Get Telegram Premium", premium_subtitle: "For yourself or someone else", premium_get_suffix: "get",
+    custom_amount: "Custom amount", custom_amount_hint: "Enter your own", custom_amount_label: "How many Stars?",
+    recent_recipient_label: "Recent:",
   },
 };
 
@@ -168,13 +174,24 @@ async function renderItems() {
 
   if (!items.length) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
+  const customCardHTML = currentCategory === "stars"
+    ? '<div id="stars-custom-card" class="bg-white/5 backdrop-blur-md border border-dashed border-white/20 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10">' +
+        '<div class="text-3xl my-2">✏️</div>' +
+        '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + t("custom_amount") + '</div>' +
+        '<div class="text-[10px] font-bold text-gray-400">' + t("custom_amount_hint") + '</div>' +
+      '</div>'
+    : "";
+
   grid.innerHTML = items.map(function(it, i) {
     return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10 hover:border-white/20 shadow-lg shadow-black/20">' +
       '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>' +
       '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
       '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
     '</div>';
-  }).join("");
+  }).join("") + customCardHTML;
+
+  const customCard = document.getElementById("stars-custom-card");
+  if (customCard) customCard.addEventListener("click", openCustomStarsModal);
 
   Array.prototype.forEach.call(grid.querySelectorAll(".product-card"), function(card) {
     card.addEventListener("click", function() { openModal(items[Number(card.dataset.i)]); });
@@ -393,7 +410,7 @@ function setRecipient(type) {
   const btnSelf = document.getElementById("rec-self");
   const btnFriend = document.getElementById("rec-friend");
   const userField = document.getElementById("username-field");
-  const activeCls = "flex-1 py-1.5 rounded-lg bg-white/10 font-semibold text-xs text-white";
+  const activeCls = "flex-1 py-1.5 rounded-lg bg-white/10 font-semibold text-xs text-white shadow-inner";
   const inactiveCls = "flex-1 py-1.5 rounded-lg text-gray-400 font-semibold text-xs";
 
   if (type === "self") {
@@ -402,8 +419,26 @@ function setRecipient(type) {
   } else {
     btnFriend.className = activeCls; btnSelf.className = inactiveCls;
     userField.classList.remove("hidden");
+    showRecentRecipientChip();
   }
   document.getElementById("modal-error").classList.add("hidden");
+}
+
+function showRecentRecipientChip() {
+  let recent = null;
+  try { recent = localStorage.getItem("oson_last_recipient"); } catch (e) { /* недоступно — просто не покажем чип */ }
+
+  const chip = document.getElementById("recent-recipient-chip");
+  const btn = document.getElementById("recent-recipient-btn");
+  if (!recent) { chip.classList.add("hidden"); return; }
+
+  btn.textContent = recent;
+  btn.onclick = function() { document.getElementById("gift-username").value = recent; };
+  chip.classList.remove("hidden");
+}
+
+function saveRecentRecipient(username) {
+  try { localStorage.setItem("oson_last_recipient", username); } catch (e) { /* тихо игнорируем */ }
 }
 
 function stepDays(delta) {
@@ -414,6 +449,23 @@ function stepDays(delta) {
   rentDays = next;
   document.getElementById("days-value").textContent = rentDays;
   document.getElementById("modal-price").textContent = fmtUZS(activeItem.price * rentDays);
+}
+
+let _starsRateCache = null;
+async function openCustomStarsModal() {
+  if (!_starsRateCache) {
+    const res = await fetch("/api/stars_rate");
+    _starsRateCache = await res.json();
+  }
+  const rate = _starsRateCache.rate_uzs_per_star;
+  const qty = 50;
+  openModal({
+    kind: "stars_custom",
+    title: t("custom_amount"),
+    price: rate * qty,
+    emoji: "✏️",
+    raw: { rate: rate, qty: qty, min: _starsRateCache.min_stars || 50 },
+  });
 }
 
 async function openModal(item) {
@@ -435,6 +487,20 @@ async function openModal(item) {
 
   document.getElementById("rent-days-field").classList.toggle("hidden", item.kind !== "nft_rent");
   if (item.kind === "nft_rent") document.getElementById("days-value").textContent = rentDays;
+
+  const starsCustomField = document.getElementById("stars-custom-field");
+  const starsCustomInput = document.getElementById("stars-custom-input");
+  starsCustomField.classList.toggle("hidden", item.kind !== "stars_custom");
+  if (item.kind === "stars_custom") {
+    starsCustomInput.value = item.raw.qty || 50;
+    starsCustomInput.oninput = function() {
+      let qty = parseInt(starsCustomInput.value, 10);
+      if (isNaN(qty) || qty < 50) qty = 50;
+      item.raw.qty = qty;
+      item.price = qty * item.raw.rate;
+      document.getElementById("modal-price").textContent = fmtUZS(item.price);
+    };
+  }
 
   const previewBtn = document.getElementById("preview-gift-btn");
   if (item.kind === "nft_rent" && item.previewUrl) {
@@ -591,6 +657,8 @@ function sendPaymentInfo() {
 
   if (item.kind === "stars") {
     payload.item_name = item.raw.amount + " звёзд"; payload.price = item.raw.price_uzs; payload.quantity = item.raw.amount;
+  } else if (item.kind === "stars_custom") {
+    payload.item_name = item.raw.qty + " звёзд"; payload.price = item.price; payload.quantity = item.raw.qty;
   } else if (item.kind === "premium") {
     payload.item_name = "Premium — " + item.raw.label; payload.price = item.raw.price_uzs; payload.quantity = 1;
   } else if (item.kind === "simple_gift") {
@@ -601,6 +669,8 @@ function sendPaymentInfo() {
     payload.min_days = item.raw.min_duration_days; payload.max_days = item.raw.max_duration_days;
     payload.days = rentDays;
   }
+
+  if (recipientType === "friend" && friendUsername) saveRecentRecipient(friendUsername);
 
   if (tg && tg.sendData) {
     tg.sendData(JSON.stringify(payload));

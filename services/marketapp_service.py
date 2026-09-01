@@ -26,7 +26,7 @@ from services.ton_deeplink import build_ton_deeplinks
 
 SECONDS_IN_DAY = 86400
 NANO_PER_GRAM = 1_000_000_000
-MAX_PAGES_TO_SCAN = 4  # сколько страниц API максимум пролистать, чтобы набрать limit валидных лотов
+MAX_PAGES_TO_SCAN = 10  # сколько страниц API максимум пролистать, чтобы набрать limit валидных лотов
 
 _NAME_NUM_RE = re.compile(r"^(.*?)\s*#(\d+)\s*$")
 
@@ -98,34 +98,43 @@ async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch", 
             return_exceptions=False,
         )
 
-    result = []
-    for item, image_url in zip(collected_raw, images):
+    def build_item(item: dict, image_url: str | None) -> dict:
         base_price_per_day_gram = int(item["price_per_day"]) / NANO_PER_GRAM
         calc = calc_rent_price(base_price_per_day_gram, days=1)
-
-        if calc["with_markup"] < config.RENT_MIN_DISPLAY_UZS:
-            continue  # отсекаем почти бесплатные/мусорные лоты
 
         m = _NAME_NUM_RE.match(item["nft_name"] or "")
         title = m.group(1) if m else item["nft_name"]
         number = m.group(2) if m else None
         slug = _slugify(title) if title else None
 
-        result.append({
+        return {
             "nft_address": item["nft_address"],
             "name": title,
             "number": number,
             "image_url": image_url,
-            # Официальный формат Telegram для просмотра гифта (как в самом приложении)
             "preview_url": f"https://t.me/nft/{slug}-{number}" if slug and number else None,
             "discount_per_day": item.get("discount_per_day", 0),
             "base_price_per_day_gram": base_price_per_day_gram,
             "price_per_day_uzs_with_markup": calc["with_markup"],
             "min_duration_days": item["min_duration"] // SECONDS_IN_DAY,
             "max_duration_days": item["max_duration"] // SECONDS_IN_DAY,
-        })
+        }
+
+    result = []
+    for item, image_url in zip(collected_raw, images):
+        base_price_per_day_gram = int(item["price_per_day"]) / NANO_PER_GRAM
+        calc = calc_rent_price(base_price_per_day_gram, days=1)
+        if calc["with_markup"] < config.RENT_MIN_DISPLAY_UZS:
+            continue  # отсекаем почти бесплатные/мусорные лоты
+        result.append(build_item(item, image_url))
         if len(result) >= limit:
             break
+
+    # Аварийный откат: если после фильтра совсем ничего не осталось (например,
+    # конкретная сортировка выдаёт подряд одни копеечные лоты) — лучше
+    # показать хоть что-то без порога цены, чем пустой экран
+    if not result and collected_raw:
+        result = [build_item(item, image_url) for item, image_url in zip(collected_raw, images)][:limit]
 
     return {"items": result, "next_cursor": next_cursor}
 

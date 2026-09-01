@@ -27,7 +27,7 @@ CURRENCY = "UZS"
 MARKETAPP_API_KEY = os.getenv("MARKETAPP_API_KEY", "")
 
 # Наценка на базовую цену аренды (в долях), см. services/marketapp_service.py
-RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.2"))  # +20%
+RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.25"))  # +25%
 
 # Курс: сколько сум стоит 1 грамм TON (обнови при изменении курса)
 TON_GRAM_RATE_UZS = int(os.getenv("TON_GRAM_RATE_UZS", "18250"))

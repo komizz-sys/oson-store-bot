@@ -45,6 +45,12 @@ async def api_stars():
     return get_stars_packages()
 
 
+@app.get("/api/stars_rate")
+async def api_stars_rate():
+    """Сум за 1 звезду — для произвольного количества (не из готовых пакетов)."""
+    return {"rate_uzs_per_star": config.STAR_UNIT_PRICE_UZS, "min_stars": 50}
+
+
 @app.get("/api/premium")
 async def api_premium():
     return get_premium_packages()
