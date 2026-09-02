@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from services.prices import get_stars_packages, get_premium_packages
-from services.marketapp_service import get_available_gifts
+from services.marketapp_service import get_available_gifts, get_rent_collections
 
 app = FastAPI(title="Gift Shop Mini App API")
 
@@ -79,8 +79,13 @@ async def api_simple_gift():
 
 
 @app.get("/api/nft_rent")
-async def api_nft_rent(sort_by: str = "recently_touch", cursor: str | None = None):
-    return await get_available_gifts(limit=15, sort_by=sort_by, cursor=cursor)
+async def api_nft_rent(sort_by: str = "recently_touch", cursor: str | None = None, collection_address: str | None = None):
+    return await get_available_gifts(limit=15, sort_by=sort_by, cursor=cursor, collection_address=collection_address)
+
+
+@app.get("/api/rent_collections")
+async def api_rent_collections():
+    return await get_rent_collections()
 
 
 @app.get("/api/payment_info")

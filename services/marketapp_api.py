@@ -72,12 +72,20 @@ async def buy_premium(username: str, months: int, currency: str = "GRAM") -> dic
 
 # ---------- Rent ----------
 
-async def get_gifts_for_rent(sort_by: str = "price_per_day", cursor: str | None = None) -> dict:
+async def get_gifts_for_rent(sort_by: str = "price_per_day", cursor: str | None = None,
+                              collection_address: str | None = None) -> dict:
     """-> {'cursor': str|None, 'items': [RentItem]}"""
     params = {"sort_by": sort_by}
     if cursor:
         params["cursor"] = cursor
+    if collection_address:
+        params["collection_address"] = collection_address
     return await _get("/v1/rent/gifts/", params)
+
+
+async def get_gift_collections() -> list[dict]:
+    """-> [{'name': str, 'address': str, 'extra_data': {...}}] — список коллекций гифтов."""
+    return await _get("/v1/collections/gifts/")
 
 
 async def rent_pay(nft_address: str, duration_seconds: int, price_per_day_gram: str) -> dict:

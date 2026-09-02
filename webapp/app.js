@@ -19,11 +19,11 @@ const I18N = {
     rent_terms: (fee, refund) => "Xizmat haqi: ~" + fee + ". Ijara tugagach ~" + refund + " qaytariladi.",
     copied: "Nusxalandi!", empty: "Hozircha bo'sh.", rent_days_suffix: "kun", rent_from: "dan", rent_btn: "Ijaraga olish",
     modal_preview: "Telegram-da ko'rish",
-    sort_recent: "Yangilari", sort_price_asc: "Narx: arzon", sort_price_desc: "Narx: qimmat", sort_price_min: "Narx: min",
+    sort_recent: "Yangilari", sort_price_asc: "Narx: arzondan qimmatga", sort_price_desc: "Narx: qimmatdan arzonga",
     sort_duration_asc: "Muddat: qisqa", sort_duration_desc: "Muddat: uzun",
     load_more: "Ko'proq ko'rsatish", premium_title: "Telegram Premium olish", premium_subtitle: "O'zingiz yoki yaqiningiz uchun", premium_get_suffix: "olish",
     custom_amount: "Boshqa miqdor", custom_amount_hint: "O'zingiz kiriting", custom_amount_label: "Nechta Stars?",
-    recent_recipient_label: "Yaqinda:",
+    recent_recipient_label: "Yaqinda:", collection_all: "Barcha kolleksiyalar", collection_title: "Kolleksiya bo'yicha filtr",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -41,11 +41,11 @@ const I18N = {
     rent_terms: (fee, refund) => "Сервисный сбор: ~" + fee + ". После окончания аренды вернётся ~" + refund + ".",
     copied: "Скопировано!", empty: "Пока пусто.", rent_days_suffix: "дн.", rent_from: "от", rent_btn: "Арендовать",
     modal_preview: "Смотреть в Telegram",
-    sort_recent: "Новинки", sort_price_asc: "Цена: дешевле", sort_price_desc: "Цена: дороже", sort_price_min: "Цена: мин",
+    sort_recent: "Новинки", sort_price_asc: "Цена: по возрастанию", sort_price_desc: "Цена: по убыванию",
     sort_duration_asc: "Срок: короче", sort_duration_desc: "Срок: длиннее",
     load_more: "Показать ещё", premium_title: "Оформить Telegram Premium", premium_subtitle: "Себе или близкому человеку", premium_get_suffix: "оформить",
     custom_amount: "Другое количество", custom_amount_hint: "Введите сами", custom_amount_label: "Сколько звёзд?",
-    recent_recipient_label: "Недавнее:",
+    recent_recipient_label: "Недавнее:", collection_all: "Все коллекции", collection_title: "Фильтр по коллекции",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -63,11 +63,11 @@ const I18N = {
     rent_terms: (fee, refund) => "Service fee: ~" + fee + ". ~" + refund + " is refunded after the rental ends.",
     copied: "Copied!", empty: "Nothing here yet.", rent_days_suffix: "days", rent_from: "from", rent_btn: "Rent",
     modal_preview: "View in Telegram",
-    sort_recent: "Newest", sort_price_asc: "Price: cheapest", sort_price_desc: "Price: priciest", sort_price_min: "Price: min",
+    sort_recent: "Newest", sort_price_asc: "Price: low to high", sort_price_desc: "Price: high to low",
     sort_duration_asc: "Duration: shortest", sort_duration_desc: "Duration: longest",
     load_more: "Show more", premium_title: "Get Telegram Premium", premium_subtitle: "For yourself or someone else", premium_get_suffix: "get",
     custom_amount: "Custom amount", custom_amount_hint: "Enter your own", custom_amount_label: "How many Stars?",
-    recent_recipient_label: "Recent:",
+    recent_recipient_label: "Recent:", collection_all: "All collections", collection_title: "Filter by collection",
   },
 };
 
@@ -112,6 +112,8 @@ const catalog = { stars: [], premium: [], simple_gift: [], nft_rent: [] };
 let currentCategory = "stars";
 let currentTab = "asosiy";
 let currentRentSort = "recently_touch";
+let currentRentCollection = null;
+let currentRentCollectionName = null;
 
 async function loadCatalog(cat, forceReload) {
   if (catalog[cat].length && !forceReload) return catalog[cat];
@@ -123,15 +125,13 @@ async function loadCatalog(cat, forceReload) {
 }
 
 async function fetchRentPage(cursor) {
-  const isClientDesc = currentRentSort === "price_desc_client";
-  const backendSort = isClientDesc ? "price_per_day" : currentRentSort;
-  let url = "/api/nft_rent?sort_by=" + backendSort;
+  let url = "/api/nft_rent?sort_by=" + currentRentSort;
+  if (currentRentCollection) url += "&collection_address=" + encodeURIComponent(currentRentCollection);
   if (cursor) url += "&cursor=" + encodeURIComponent(cursor);
   const res = await fetch(url);
   if (!res.ok) throw new Error("bad response nft_rent");
   const data = await res.json();
-  let mapped = data.items.map(normalizeItem("nft_rent"));
-  if (isClientDesc) mapped = mapped.slice().reverse();
+  const mapped = data.items.map(normalizeItem("nft_rent"));
   return { items: mapped, nextCursor: data.next_cursor };
 }
 
@@ -313,6 +313,69 @@ document.getElementById("rent-sort-select").addEventListener("change", function(
   currentRentSort = e.target.value;
   renderIjara(true);
 });
+
+/* ---------------- Фильтр по коллекции ---------------- */
+let _collectionsCache = null;
+
+document.getElementById("rent-collection-btn").addEventListener("click", openCollectionModal);
+document.getElementById("collection-close-btn").addEventListener("click", closeCollectionModal);
+document.getElementById("collection-modal").addEventListener("click", function(e) {
+  if (e.target === document.getElementById("collection-modal")) closeCollectionModal();
+});
+
+async function openCollectionModal() {
+  const modal = document.getElementById("collection-modal");
+  const content = document.getElementById("collection-content");
+  const listEl = document.getElementById("collection-list");
+
+  modal.classList.remove("hidden");
+  requestAnimationFrame(function() {
+    modal.classList.remove("opacity-0");
+    content.classList.remove("translate-y-full");
+  });
+
+  if (!_collectionsCache) {
+    listEl.innerHTML = skeletonHTML(4, "h-12");
+    try {
+      const res = await fetch("/api/rent_collections");
+      _collectionsCache = await res.json();
+    } catch (e) { _collectionsCache = []; }
+  }
+
+  paintCollectionList();
+}
+
+function paintCollectionList() {
+  const listEl = document.getElementById("collection-list");
+  const rows = [{ name: t("collection_all"), address: null }].concat(_collectionsCache || []);
+
+  listEl.innerHTML = rows.map(function(c) {
+    const selected = c.address === currentRentCollection;
+    return '<div data-address="' + (c.address || "") + '" data-name="' + c.name + '" class="collection-row flex items-center justify-between gap-3 rounded-xl p-3 cursor-pointer border ' +
+      (selected ? "bg-neon-blue/10 border-neon-blue" : "bg-white/5 border-white/10") + '">' +
+      '<span class="text-sm font-medium text-white">' + c.name + '</span>' +
+      (selected ? '<span class="text-neon-blue text-sm">✓</span>' : '') +
+    '</div>';
+  }).join("");
+
+  Array.prototype.forEach.call(listEl.querySelectorAll(".collection-row"), function(row) {
+    row.addEventListener("click", function() {
+      currentRentCollection = row.dataset.address || null;
+      currentRentCollectionName = currentRentCollection ? row.dataset.name : null;
+      document.getElementById("rent-collection-label").textContent = currentRentCollectionName || t("collection_all");
+      closeCollectionModal();
+      renderIjara(true);
+    });
+  });
+}
+
+function closeCollectionModal() {
+  const modal = document.getElementById("collection-modal");
+  const content = document.getElementById("collection-content");
+  content.classList.add("translate-y-full");
+  modal.classList.add("opacity-0");
+  setTimeout(function() { modal.classList.add("hidden"); }, 300);
+}
 
 /* ---------------- Premium: список с радио-выбором ---------------- */
 let selectedPremiumIndex = 0;

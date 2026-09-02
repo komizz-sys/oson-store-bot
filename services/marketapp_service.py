@@ -59,7 +59,8 @@ async def _fetch_gift_image(client: httpx.AsyncClient, nft_name: str) -> str | N
         return None
 
 
-async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch", cursor: str | None = None) -> dict:
+async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch", cursor: str | None = None,
+                               collection_address: str | None = None) -> dict:
     """
     Живой список гифтов, доступных в аренду, с ценой/день в сумах (уже с наценкой)
     и, если удалось получить, реальной картинкой + ссылкой-превью гифта.
@@ -78,7 +79,9 @@ async def get_available_gifts(limit: int = 15, sort_by: str = "recently_touch", 
 
     try:
         for _ in range(MAX_PAGES_TO_SCAN):
-            data = await marketapp_api.get_gifts_for_rent(sort_by=sort_by, cursor=next_cursor)
+            data = await marketapp_api.get_gifts_for_rent(
+                sort_by=sort_by, cursor=next_cursor, collection_address=collection_address
+            )
             items = data.get("items", [])
             collected_raw.extend(items)
 
@@ -145,6 +148,28 @@ def _price_uzs_preview(raw_item: dict) -> int:
         return calc_rent_price(gram, days=1)["with_markup"]
     except Exception:
         return 0
+
+
+_collections_cache: list[dict] | None = None
+
+
+async def get_rent_collections() -> list[dict]:
+    """
+    Список коллекций гифтов для фильтра (Plush Pepes, Scared Cats и т.д.).
+    Кэшируется в памяти процесса — список коллекций меняется редко.
+    -> [{"name": str, "address": str}]
+    """
+    global _collections_cache
+    if _collections_cache is not None:
+        return _collections_cache
+
+    try:
+        raw = await marketapp_api.get_gift_collections()
+    except Exception:
+        return []
+
+    _collections_cache = [{"name": c["name"], "address": c["address"]} for c in raw]
+    return _collections_cache
 
 
 def calc_rent_price(base_price_per_day_gram: float, days: int) -> dict:

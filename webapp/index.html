@@ -98,18 +98,30 @@
       <p class="text-[11px] text-gray-300 leading-relaxed" id="rent-terms-text">...</p>
     </div>
 
-    <div class="flex justify-end mb-3">
+    <div class="flex justify-between items-center gap-2 mb-3">
+      <button id="rent-collection-btn" class="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-300 active:scale-95 transition-all">
+        <span>🗂</span><span id="rent-collection-label" data-i18n="collection_all">Barcha kolleksiyalar</span>
+      </button>
       <select id="rent-sort-select" class="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-gray-300 focus:outline-none">
         <option value="recently_touch" data-i18n="sort_recent">Yangilari</option>
-        <option value="price_per_day" data-i18n="sort_price_asc">Narx: arzon</option>
-        <option value="price_desc_client" data-i18n="sort_price_desc">Narx: qimmat</option>
-        <option value="min_price" data-i18n="sort_price_min">Narx: min</option>
+        <option value="price_per_day" data-i18n="sort_price_asc">Narx: arzondan qimmatga</option>
+        <option value="min_price" data-i18n="sort_price_desc">Narx: qimmatdan arzonga</option>
         <option value="duration_asc" data-i18n="sort_duration_asc">Muddat: qisqa</option>
         <option value="duration_desc" data-i18n="sort_duration_desc">Muddat: uzun</option>
       </select>
     </div>
 
     <main id="ijara-grid" class="grid grid-cols-2 gap-3 max-w-sm mx-auto"></main>
+  </div>
+
+  <!-- ================= COLLECTION FILTER MODAL ================= -->
+  <div id="collection-modal" class="fixed inset-0 bg-black/80 z-40 hidden opacity-0 transition-opacity duration-300 flex items-end justify-center">
+    <div id="collection-content" class="bg-[#0a0f1e] w-full max-w-md rounded-t-3xl border-t border-white/10 p-5 transform translate-y-full transition-transform duration-300 max-h-[80vh] overflow-y-auto pb-8">
+      <div class="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4" id="collection-sheet-handle"></div>
+      <h3 class="text-base font-bold text-white mb-3" data-i18n="collection_title">Kolleksiya bo'yicha filtr</h3>
+      <div id="collection-list" class="space-y-1.5 mb-4"></div>
+      <button id="collection-close-btn" class="w-full py-3 rounded-xl bg-white/5 border border-white/10 font-semibold text-gray-300 text-sm active:scale-95 transition-all" data-i18n="modal_cancel">Bekor qilish</button>
+    </div>
   </div>
 
   <!-- ================= TARIX ================= -->
