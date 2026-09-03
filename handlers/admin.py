@@ -13,6 +13,9 @@ from services.fragment_service import try_auto_fulfill_stars, notify_manual_prem
 from services.marketapp_service import start_rent_payment
 from services.telegram_gifts import fulfill_simple_gift
 from services.public_channel import post_completed_order
+from services.live_feed import push_live_feed_event
+
+FEED_EMOJI = {"stars": "⭐", "premium": "💎", "simple_gift": "🎁", "nft_rent": "🖼"}
 from services.i18n import t
 from database.db import get_user_language as _get_user_language
 
@@ -151,6 +154,7 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
                 t(lang, "order_completed").format(order_id=order_id, item_name=order["item_name"]),
             )
             await post_completed_order(bot, order)
+            await push_live_feed_event(FEED_EMOJI.get("simple_gift", "🎁"), order["item_name"])
         for admin_id in config.ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, f"Заказ #{order_id}: {note}")
@@ -199,3 +203,4 @@ async def mark_done(call: CallbackQuery, bot: Bot):
         t(lang, "order_completed").format(order_id=order_id, item_name=order["item_name"]),
     )
     await post_completed_order(bot, order)
+    await push_live_feed_event(FEED_EMOJI.get(order["category"], "🎁"), order["item_name"])

@@ -24,6 +24,7 @@ const I18N = {
     load_more: "Ko'proq ko'rsatish", premium_title: "Telegram Premium olish", premium_subtitle: "O'zingiz yoki yaqiningiz uchun", premium_get_suffix: "olish",
     custom_amount: "Boshqa miqdor", custom_amount_hint: "O'zingiz kiriting", custom_amount_label: "Nechta Stars?",
     recent_recipient_label: "Yaqinda:", collection_all: "Barcha kolleksiyalar", collection_title: "Kolleksiya bo'yicha filtr",
+    live_label: "JONLI", minutes_ago: "daqiqa oldin", hours_ago: "soat oldin",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -46,6 +47,7 @@ const I18N = {
     load_more: "Показать ещё", premium_title: "Оформить Telegram Premium", premium_subtitle: "Себе или близкому человеку", premium_get_suffix: "оформить",
     custom_amount: "Другое количество", custom_amount_hint: "Введите сами", custom_amount_label: "Сколько звёзд?",
     recent_recipient_label: "Недавнее:", collection_all: "Все коллекции", collection_title: "Фильтр по коллекции",
+    live_label: "СЕЙЧАС", minutes_ago: "мин назад", hours_ago: "ч назад",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -68,6 +70,7 @@ const I18N = {
     load_more: "Show more", premium_title: "Get Telegram Premium", premium_subtitle: "For yourself or someone else", premium_get_suffix: "get",
     custom_amount: "Custom amount", custom_amount_hint: "Enter your own", custom_amount_label: "How many Stars?",
     recent_recipient_label: "Recent:", collection_all: "All collections", collection_title: "Filter by collection",
+    live_label: "LIVE", minutes_ago: "min ago", hours_ago: "h ago",
   },
 };
 
@@ -538,8 +541,11 @@ async function openModal(item) {
   document.getElementById("modal-title").textContent = item.title + (item.raw && item.raw.number ? " #" + item.raw.number : "");
   const emojiEl = document.getElementById("modal-emoji");
   if (item.image) {
-    emojiEl.innerHTML = '<img src="' + item.image + '" class="w-10 h-10 rounded-lg object-cover" onerror="this.parentElement.textContent=\'' + item.emoji + '\';" />';
+    const bigClass = item.kind === "nft_rent" ? "w-24 h-24" : "w-10 h-10";
+    emojiEl.className = "rounded-2xl overflow-hidden flex-shrink-0 animated-gift";
+    emojiEl.innerHTML = '<img src="' + item.image + '" class="' + bigClass + ' rounded-2xl object-cover" onerror="this.parentElement.textContent=\'' + item.emoji + '\';" />';
   } else {
+    emojiEl.className = "text-4xl animated-gift";
     emojiEl.textContent = item.emoji;
   }
   document.getElementById("modal-price").textContent = fmtUZS(item.kind === "nft_rent" ? item.price * rentDays : item.price);
@@ -776,3 +782,39 @@ applyI18n();
 initProfile();
 initReferral();
 initSupportInfo();
+initLiveFeed();
+
+/* ---------------- Живая лента заказов ---------------- */
+function timeAgoLabel(ts) {
+  const diffMin = Math.max(1, Math.round((Date.now() / 1000 - ts) / 60));
+  if (diffMin < 60) return diffMin + " " + t("minutes_ago");
+  const diffH = Math.round(diffMin / 60);
+  return diffH + " " + t("hours_ago");
+}
+
+async function initLiveFeed() {
+  let items = [];
+  try {
+    const res = await fetch("/api/live_feed");
+    items = await res.json();
+  } catch (e) { return; }
+
+  if (!items.length) return;
+
+  const bar = document.getElementById("live-feed-bar");
+  const textEl = document.getElementById("live-feed-text");
+  bar.classList.remove("hidden");
+
+  let i = 0;
+  function paint() {
+    const it = items[i % items.length];
+    textEl.style.opacity = 0;
+    setTimeout(function() {
+      textEl.textContent = it.emoji + " " + it.label + " · " + timeAgoLabel(it.ts);
+      textEl.style.opacity = 1;
+    }, 250);
+    i++;
+  }
+  paint();
+  setInterval(paint, 3500);
+}

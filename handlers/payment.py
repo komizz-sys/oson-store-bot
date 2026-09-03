@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Router, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
@@ -11,6 +13,31 @@ from services.i18n import t
 from database.db import get_user_language
 
 router = Router()
+
+REMINDER_DELAY_SECONDS = 20 * 60
+
+
+async def _remind_admin_if_still_pending(bot: Bot, order_id: int) -> None:
+    """Через 20 минут после чека — если админ так и не нажал Подтвердить/Отклонить,
+    напоминаем ещё раз. Тихо ничего не делает, если заказ уже обработан."""
+    await asyncio.sleep(REMINDER_DELAY_SECONDS)
+
+    order = await get_order(order_id)
+    if not order or order["status"] != "payment_review":
+        return  # уже подтверждён/отклонён — напоминание не нужно
+
+    text = (
+        f"⏰ Напоминание: заказ #{order_id} ждёт решения уже 20 минут.\n"
+        f"Товар: {order['item_name']}\n"
+        f"Получатель: {order['recipient']}\n"
+        f"Сумма: {format_uzs(order['price_uzs'])}\n\n"
+        "Подтверди или отклони оплату кнопками под чеком выше ⬆️"
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, text)
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "pay:manual")
@@ -82,6 +109,8 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
                 await bot.send_document(admin_id, file_id, caption=caption, reply_markup=admin_review_kb(order_id))
         except Exception:
             pass
+
+    asyncio.create_task(_remind_admin_if_still_pending(bot, order_id))
 
 
 @router.message(OrderStates.waiting_payment_proof, F.text == "/start")

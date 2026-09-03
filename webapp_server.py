@@ -5,8 +5,10 @@
 чтобы не дублировать логику оплаты/подтверждения. Этот сервис только читает.
 """
 
+import time
+
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -86,6 +88,33 @@ async def api_nft_rent(sort_by: str = "recently_touch", cursor: str | None = Non
 @app.get("/api/rent_collections")
 async def api_rent_collections():
     return await get_rent_collections()
+
+
+# ---- Живая лента выполненных заказов ("Jonli") ----
+# Хранится только в памяти процесса (сбрасывается при передеплое) — это
+# витрина доверия, не критичные данные, БД для этого не нужна.
+_live_feed: list[dict] = []
+_LIVE_FEED_MAX = 30
+
+
+@app.post("/api/live_feed/push")
+async def push_live_feed(request: Request):
+    if not config.INTERNAL_PUSH_SECRET or request.headers.get("X-Internal-Secret") != config.INTERNAL_PUSH_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    payload = await request.json()
+    _live_feed.insert(0, {
+        "emoji": payload.get("emoji", "🎁"),
+        "label": payload.get("label", ""),
+        "ts": time.time(),
+    })
+    del _live_feed[_LIVE_FEED_MAX:]
+    return {"ok": True}
+
+
+@app.get("/api/live_feed")
+async def get_live_feed():
+    return _live_feed
 
 
 @app.get("/api/payment_info")

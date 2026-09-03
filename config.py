@@ -32,6 +32,16 @@ RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.25"))  # +25%
 # Курс: сколько сум стоит 1 грамм TON (обнови при изменении курса)
 TON_GRAM_RATE_UZS = int(os.getenv("TON_GRAM_RATE_UZS", "18250"))
 
+# Защита от опечаток в переменных Railway (например TON_GRAM_RATE_UZS=1850
+# вместо 18250 — цены на аренду тихо занижаются в 10 раз, без этой проверки
+# заметить такое можно только вручную сверяя с marketapp.org).
+if not (5000 <= TON_GRAM_RATE_UZS <= 50000):
+    print(
+        f"⚠️ ВНИМАНИЕ: TON_GRAM_RATE_UZS={TON_GRAM_RATE_UZS} выглядит подозрительно "
+        f"(ожидается диапазон 5000-50000 сум за 1 GRAM). Проверь переменную на Railway — "
+        f"похоже на опечатку (пропущенная цифра), из-за которой цены аренды будут неверными."
+    )
+
 # Комиссия за сделку аренды — в граммах TON, и какой % возвращается арендатору
 RENT_FEE_GRAM = float(os.getenv("RENT_FEE_GRAM", "0.1"))
 RENT_FEE_REFUND_PERCENT = int(os.getenv("RENT_FEE_REFUND_PERCENT", "40"))
@@ -59,3 +69,7 @@ REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK", "")
 
 # ---- Контакты в профиле мини-аппа ----
 OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "")
+
+# ---- Внутренний секрет для связи бота с веб-сервисом (живая лента заказов) ----
+# Один и тот же секрет должен быть прописан в ОБОИХ сервисах на Railway.
+INTERNAL_PUSH_SECRET = os.getenv("INTERNAL_PUSH_SECRET", "")

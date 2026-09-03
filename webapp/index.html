@@ -68,6 +68,13 @@
     </div>
   </header>
 
+  <!-- Живая лента заказов — компактная, не мешает, но видна -->
+  <div id="live-feed-bar" class="hidden px-4 py-1.5 flex items-center gap-2 text-[11px] text-gray-400 border-b border-white/5 overflow-hidden">
+    <span class="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0 animate-pulse"></span>
+    <span class="font-bold text-green-400 flex-shrink-0" data-i18n="live_label">JONLI</span>
+    <span id="live-feed-text" class="truncate transition-opacity duration-300"></span>
+  </div>
+
   <!-- ================= ASOSIY ================= -->
   <div id="view-asosiy" class="block">
     <div class="flex overflow-x-auto gap-2 px-4 py-3 scrollbar-hide">
