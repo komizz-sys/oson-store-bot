@@ -12,6 +12,14 @@ from database.db import get_user_language
 
 router = Router()
 
+# Для категорий, у которых есть дополнительный контент (видео, текст и т.д.)
+CATEGORY_CONTENT = {
+    "nft_rent": {
+        "video": None,  # Заполняется при создании заказа
+        "text": None,    # Может быть инструкция по использованию
+    }
+}
+
 
 @router.message(F.web_app_data)
 async def handle_web_app_data(message: Message, state: FSMContext):
@@ -25,6 +33,7 @@ async def handle_web_app_data(message: Message, state: FSMContext):
     recipient = (payload.get("recipient") or "").strip()
     recipient_type = payload.get("recipient_type", "friend")
 
+    recipient_user_id = None
     if recipient_type == "self" or not recipient:
         # "Себе" — берём @username с сервера (message.from_user всегда точен,
         # в отличие от tg.initDataUnsafe на клиенте, который иногда не заполнен)
@@ -32,6 +41,10 @@ async def handle_web_app_data(message: Message, state: FSMContext):
             recipient = "@" + message.from_user.username
         else:
             recipient = ""
+        # Мы точно знаем числовой user_id заказчика прямо сейчас — сохраняем
+        # его, чтобы при выполнении заказа НЕ искать по @username повторно
+        # (такой повторный поиск через bot.get_chat может не сработать).
+        recipient_user_id = message.from_user.id
 
     if recipient and not recipient.startswith("@"):
         recipient = "@" + recipient
@@ -42,9 +55,9 @@ async def handle_web_app_data(message: Message, state: FSMContext):
         await message.answer(t(lang, "no_username_error"))
         return
 
-    if category in ("stars", "premium", "simple_gift"):
+    if category in ("stars", "stars_custom", "premium", "simple_gift"):
         data = {
-            "category": category,
+            "category": category if category != "stars_custom" else "stars",
             "item_name": payload["item_name"],
             "price": payload["price"],
             "quantity": payload.get("quantity", 1),
@@ -52,6 +65,14 @@ async def handle_web_app_data(message: Message, state: FSMContext):
         }
         if category == "simple_gift":
             data["nft_address"] = payload["gift_id"]  # переиспользуем поле под gift_id
+            # Защита от накрутки количества мимо интерфейса (в магазине максимум 10)
+            qty = max(1, min(int(data["quantity"] or 1), 10))
+            if qty != data["quantity"]:
+                unit_price = payload["price"] / max(int(payload.get("quantity", 1) or 1), 1)
+                data["price"] = round(unit_price * qty)
+            data["quantity"] = qty
+        if recipient_user_id:
+            data["recipient_user_id"] = recipient_user_id
 
         await state.update_data(**data, note=note)
         await state.set_state(OrderStates.confirming)
@@ -87,6 +108,7 @@ async def handle_web_app_data(message: Message, state: FSMContext):
             price=calc["total_to_pay"],
             quantity=1,
             recipient=recipient,
+            recipient_user_id=recipient_user_id,
             note=note,
         )
         await state.set_state(OrderStates.confirming)

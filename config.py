@@ -73,3 +73,10 @@ OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "")
 # ---- Внутренний секрет для связи бота с веб-сервисом (живая лента заказов) ----
 # Один и тот же секрет должен быть прописан в ОБОИХ сервисах на Railway.
 INTERNAL_PUSH_SECRET = os.getenv("INTERNAL_PUSH_SECRET", "")
+
+# ---- API для отдельного бота-аналитика (доход/расход/прибыль) ----
+# Если ANALYTICS_API_SECRET пустой — сервер аналитики просто не запускается.
+# Тот же секрет и порт должны быть прописаны в .env бота-аналитика (analytics_bot).
+ANALYTICS_API_SECRET = os.getenv("ANALYTICS_API_SECRET", "")
+STATS_API_PORT = int(os.getenv("STATS_API_PORT", "8081"))
+

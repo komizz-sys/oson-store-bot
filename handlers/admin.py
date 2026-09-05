@@ -132,6 +132,29 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
         t(lang, "payment_confirmed").format(order_id=order_id),
     )
 
+    # Отправить видео-инструкцию, если она установлена
+    if order.get("content_video_url"):
+        try:
+            await bot.send_video(
+                order["user_id"],
+                order["content_video_url"],
+                caption="📹 Вот видео-инструкция как использовать ваш заказ!",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            print(f"Ошибка при отправке видео для заказа {order_id}: {e}")
+
+    # Отправить текст-инструкцию, если она установлена
+    if order.get("content_text"):
+        try:
+            await bot.send_message(
+                order["user_id"],
+                f"📖 <b>Инструкция:</b>\n{order['content_text']}",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            print(f"Ошибка при отправке текста для заказа {order_id}: {e}")
+
     # Выполнение в зависимости от категории
     if order["category"] == "stars":
         await try_auto_fulfill_stars(bot, order)

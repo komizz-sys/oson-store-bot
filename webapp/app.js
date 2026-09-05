@@ -12,7 +12,7 @@ const I18N = {
     nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_referral: "Referal", nav_profile: "Profil",
     modal_to_whom: "Kimga?", modal_to_self: "O'zimga", modal_to_friend: "Do'stimga",
     modal_recipient_label: "Qabul qiluvchi (@username):", modal_message_label: "Xabar (ixtiyoriy):",
-    modal_message_placeholder: "Tabrik matni...", modal_rent_days: "Necha kunga?",
+    modal_message_placeholder: "Tabrik matni...", modal_rent_days: "Necha kunga?", modal_gift_quantity: "Nechta dona?",
     modal_card_label: "To'lov uchun karta (Uzcard/Humo)", modal_card_holder_label: "Qabul qiluvchi",
     modal_copy: "Nusxalash", modal_paid: "To'ladim", modal_cancel: "Bekor qilish",
     err_username: "Username kiriting", err_no_username: "Sizda public username yo'q. Telegram sozlamalaridan o'rnating yoki \"Do'stimga\" tanlang.",
@@ -35,7 +35,7 @@ const I18N = {
     nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_referral: "Рефералы", nav_profile: "Профиль",
     modal_to_whom: "Кому?", modal_to_self: "Себе", modal_to_friend: "Другу",
     modal_recipient_label: "Получатель (@username):", modal_message_label: "Сообщение (необязательно):",
-    modal_message_placeholder: "Текст поздравления...", modal_rent_days: "На сколько дней?",
+    modal_message_placeholder: "Текст поздравления...", modal_rent_days: "На сколько дней?", modal_gift_quantity: "Сколько штук?",
     modal_card_label: "Карта для оплаты (Uzcard/Humo)", modal_card_holder_label: "Получатель",
     modal_copy: "Скопировать", modal_paid: "Я оплатил", modal_cancel: "Отмена",
     err_username: "Введите username", err_no_username: "У вас нет публичного username. Установите в настройках Telegram или выберите \"Другу\".",
@@ -58,7 +58,7 @@ const I18N = {
     nav_main: "Home", nav_rent: "Rent", nav_history: "History", nav_referral: "Referral", nav_profile: "Profile",
     modal_to_whom: "For whom?", modal_to_self: "Myself", modal_to_friend: "A friend",
     modal_recipient_label: "Recipient (@username):", modal_message_label: "Message (optional):",
-    modal_message_placeholder: "Congratulation text...", modal_rent_days: "For how many days?",
+    modal_message_placeholder: "Congratulation text...", modal_rent_days: "For how many days?", modal_gift_quantity: "How many?",
     modal_card_label: "Payment card (Uzcard/Humo)", modal_card_holder_label: "Recipient",
     modal_copy: "Copy", modal_paid: "I've paid", modal_cancel: "Cancel",
     err_username: "Enter a username", err_no_username: "You don't have a public username. Set one in Telegram settings or choose \"A friend\".",
@@ -350,13 +350,17 @@ async function openCollectionModal() {
 
 function paintCollectionList() {
   const listEl = document.getElementById("collection-list");
-  const rows = [{ name: t("collection_all"), address: null }].concat(_collectionsCache || []);
+  const rows = [{ name: t("collection_all"), address: null, image: null }].concat(_collectionsCache || []);
 
   listEl.innerHTML = rows.map(function(c) {
     const selected = c.address === currentRentCollection;
-    return '<div data-address="' + (c.address || "") + '" data-name="' + c.name + '" class="collection-row flex items-center justify-between gap-3 rounded-xl p-3 cursor-pointer border ' +
+    const iconHTML = c.image
+      ? '<img src="' + c.image + '" alt="" class="w-8 h-8 rounded-lg object-cover flex-shrink-0" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'w-8 h-8 rounded-lg bg-white/10 flex-shrink-0\'}))">'
+      : '<div class="w-8 h-8 rounded-lg bg-white/10 flex-shrink-0"></div>';
+    return '<div data-address="' + (c.address || "") + '" data-name="' + c.name + '" class="collection-row flex items-center gap-3 rounded-xl p-3 cursor-pointer border ' +
       (selected ? "bg-neon-blue/10 border-neon-blue" : "bg-white/5 border-white/10") + '">' +
-      '<span class="text-sm font-medium text-white">' + c.name + '</span>' +
+      iconHTML +
+      '<span class="text-sm font-medium text-white flex-1">' + c.name + '</span>' +
       (selected ? '<span class="text-neon-blue text-sm">✓</span>' : '') +
     '</div>';
   }).join("");
@@ -517,6 +521,17 @@ function stepDays(delta) {
   document.getElementById("modal-price").textContent = fmtUZS(activeItem.price * rentDays);
 }
 
+const GIFT_QTY_MAX = 10;
+let giftQty = 1;
+function stepGiftQty(delta) {
+  if (!activeItem || activeItem.kind !== "simple_gift") return;
+  const next = giftQty + delta;
+  if (next < 1 || next > GIFT_QTY_MAX) return;
+  giftQty = next;
+  document.getElementById("gift-qty-value").textContent = giftQty;
+  document.getElementById("modal-price").textContent = fmtUZS(activeItem.price * giftQty);
+}
+
 let _starsRateCache = null;
 async function openCustomStarsModal() {
   if (!_starsRateCache) {
@@ -556,6 +571,13 @@ async function openModal(item) {
 
   document.getElementById("rent-days-field").classList.toggle("hidden", item.kind !== "nft_rent");
   if (item.kind === "nft_rent") document.getElementById("days-value").textContent = rentDays;
+
+  document.getElementById("gift-quantity-field").classList.toggle("hidden", item.kind !== "simple_gift");
+  if (item.kind === "simple_gift") {
+    giftQty = 1;
+    document.getElementById("gift-qty-value").textContent = giftQty;
+    document.getElementById("modal-price").textContent = fmtUZS(item.price * giftQty);
+  }
 
   const starsCustomField = document.getElementById("stars-custom-field");
   const starsCustomInput = document.getElementById("stars-custom-input");
@@ -731,7 +753,10 @@ function sendPaymentInfo() {
   } else if (item.kind === "premium") {
     payload.item_name = "Premium — " + item.raw.label; payload.price = item.raw.price_uzs; payload.quantity = 1;
   } else if (item.kind === "simple_gift") {
-    payload.item_name = "Подарок " + item.emoji + " (" + item.raw.star_count + "⭐)"; payload.price = item.raw.price_uzs; payload.quantity = 1; payload.gift_id = item.raw.id;
+    payload.item_name = "Подарок " + item.emoji + " (" + item.raw.star_count + "⭐) x" + giftQty;
+    payload.price = item.raw.price_uzs * giftQty;
+    payload.quantity = giftQty;
+    payload.gift_id = item.raw.id;
   } else if (item.kind === "nft_rent") {
     payload.item_name = item.raw.name; payload.nft_address = item.raw.nft_address;
     payload.base_price_per_day_gram = item.raw.base_price_per_day_gram;

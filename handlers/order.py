@@ -249,6 +249,7 @@ async def confirm_order(call: CallbackQuery, state: FSMContext):
         quantity=data.get("quantity", 1),
         price_uzs=data["price"],
         recipient=data["recipient"],
+        recipient_user_id=data.get("recipient_user_id"),
         rent_days=data.get("rent_days"),
         nft_address=data.get("nft_address"),
         base_price_per_day_gram=str(data.get("base_price_per_day_gram", "")) or None,

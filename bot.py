@@ -8,6 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 import config
 from database.db import init_db
+from services.stats_api import start_stats_server
 from handlers import user, admin, order, payment, webapp, support
 
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +41,10 @@ async def main():
         await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
     except Exception:
         pass
+
+    # Внутренний API для бота-аналитика (доход/расход/прибыль) — если не
+    # настроен через ANALYTICS_API_SECRET, просто ничего не делает
+    await start_stats_server()
 
     await dp.start_polling(bot)
 

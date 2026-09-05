@@ -269,6 +269,15 @@
         <input type="number" id="stars-custom-input" min="50" step="1" value="50" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-neon-yellow" />
       </div>
 
+      <div id="gift-quantity-field" class="mb-4 hidden">
+        <label class="block text-[11px] text-gray-400 mb-1.5 font-medium" data-i18n="modal_gift_quantity">Nechta dona?</label>
+        <div class="flex items-center justify-center gap-4 bg-white/5 rounded-xl border border-white/10 py-2">
+          <button onclick="stepGiftQty(-1)" class="w-8 h-8 rounded-full bg-white/10 text-white font-bold">-</button>
+          <span id="gift-qty-value" class="text-base font-bold w-10 text-center">1</span>
+          <button onclick="stepGiftQty(1)" class="w-8 h-8 rounded-full bg-white/10 text-white font-bold">+</button>
+        </div>
+      </div>
+
       <div class="bg-white/5 p-3 rounded-xl border border-white/10 mb-4 relative">
          <p class="text-[10px] text-gray-500 mb-0.5" data-i18n="modal_card_label">To'lov uchun karta (Uzcard/Humo)</p>
          <p class="text-base font-mono font-bold text-white mb-1.5 tracking-wider" id="pay-card-number">----</p>

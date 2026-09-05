@@ -6,11 +6,14 @@ CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     username TEXT,
-    category TEXT NOT NULL,          -- stars | premium | nft_rent
+    category TEXT NOT NULL,          -- stars | premium | nft_rent | simple_gift
     item_name TEXT NOT NULL,         -- напр. "100 звёзд", "Premium 3 мес", "Plush Pepe"
     quantity INTEGER DEFAULT 1,
     price_uzs INTEGER NOT NULL,
     recipient TEXT,                  -- @username или ссылка, куда доставить звёзды/подарок
+    recipient_user_id INTEGER,       -- числовой user_id получателя, если известен точно
+                                      -- (заполняется, когда заказ оформлен "себе" — тогда
+                                      -- повторный поиск по @username при выполнении не нужен)
     rent_days INTEGER,               -- только для аренды NFT
     nft_address TEXT,                -- адрес NFT на MarketApp (для аренды)
     base_price_per_day_gram TEXT,    -- базовая цена/день в GRAM (для аренды)
@@ -18,6 +21,8 @@ CREATE TABLE IF NOT EXISTS orders (
     -- awaiting_payment -> payment_review -> paid -> fulfilling -> completed / rejected
     payment_proof_file_id TEXT,
     admin_comment TEXT,
+    content_video_url TEXT,          -- видео-инструкция после выполнения
+    content_text TEXT,               -- текст-инструкция после выполнения
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
@@ -50,6 +55,9 @@ async def init_db():
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
             "ALTER TABLE users ADD COLUMN last_seen TEXT",
+            "ALTER TABLE orders ADD COLUMN content_video_url TEXT",
+            "ALTER TABLE orders ADD COLUMN content_text TEXT",
+            "ALTER TABLE orders ADD COLUMN recipient_user_id INTEGER",
         ):
             try:
                 await db.execute(stmt)
@@ -91,6 +99,60 @@ async def get_stats() -> dict:
         "active_7d": active_7d,
         "total_orders": total_orders,
         "orders_by_status": by_status,
+    }
+
+
+# Статусы, которые считаем "деньги реально получены" — оплата подтверждена
+# админом (payment_review ещё не считаем, там оплата не проверена).
+PAID_STATUSES = ("paid", "fulfilling", "completed")
+
+
+async def get_revenue_stats(since_sql: str | None, ton_gram_rate_uzs: int) -> dict:
+    """
+    Доход по категориям за период (или за всё время, если since_sql=None).
+    Для аренды (nft_rent) также считает реальный расход на MarketApp —
+    он известен точно: base_price_per_day_gram * rent_days, переведённый
+    в сум по ТЕКУЩЕМУ курсу (курс на момент самой аренды не хранится,
+    так что при сильном изменении курса цифра будет чуть приблизительной).
+    -> {
+        "income_by_category": {"stars": int, "premium": int, "simple_gift": int, "nft_rent": int},
+        "income_total": int,
+        "orders_count": int,
+        "rent_auto_cost_uzs": int,
+    }
+    """
+    status_placeholders = ",".join("?" for _ in PAID_STATUSES)
+    where = f"status IN ({status_placeholders})"
+    params: list = list(PAID_STATUSES)
+    if since_sql:
+        where += " AND created_at >= ?"
+        params.append(since_sql)
+
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            f"SELECT category, COALESCE(SUM(price_uzs), 0), COUNT(*) FROM orders WHERE {where} GROUP BY category",
+            params,
+        ) as cur:
+            rows = await cur.fetchall()
+
+        async with db.execute(
+            f"""SELECT COALESCE(SUM(CAST(base_price_per_day_gram AS REAL) * rent_days), 0)
+                FROM orders WHERE {where} AND category = 'nft_rent'
+                AND base_price_per_day_gram IS NOT NULL AND rent_days IS NOT NULL""",
+            params,
+        ) as cur:
+            rent_gram_total = (await cur.fetchone())[0] or 0
+
+    income_by_category = {row[0]: row[1] for row in rows}
+    orders_count = sum(row[2] for row in rows)
+    income_total = sum(income_by_category.values())
+    rent_auto_cost_uzs = round(rent_gram_total * ton_gram_rate_uzs)
+
+    return {
+        "income_by_category": income_by_category,
+        "income_total": income_total,
+        "orders_count": orders_count,
+        "rent_auto_cost_uzs": rent_auto_cost_uzs,
     }
 
 

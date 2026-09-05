@@ -157,7 +157,7 @@ async def get_rent_collections() -> list[dict]:
     """
     Список коллекций гифтов для фильтра (Plush Pepes, Scared Cats и т.д.).
     Кэшируется в памяти процесса — список коллекций меняется редко.
-    -> [{"name": str, "address": str}]
+    -> [{"name": str, "address": str, "image": str | None}]
     """
     global _collections_cache
     if _collections_cache is not None:
@@ -168,7 +168,17 @@ async def get_rent_collections() -> list[dict]:
     except Exception:
         return []
 
-    _collections_cache = [{"name": c["name"], "address": c["address"]} for c in raw]
+    # Логотип коллекции = картинка гифта #1 этой коллекции с nft.fragment.com
+    # (тот же публичный паттерн, что уже используется для карточек товаров)
+    async with httpx.AsyncClient() as client:
+        images = await asyncio.gather(
+            *[_fetch_gift_image(client, f"{c['name']} #1") for c in raw]
+        )
+
+    _collections_cache = [
+        {"name": c["name"], "address": c["address"], "image": image}
+        for c, image in zip(raw, images)
+    ]
     return _collections_cache
 
 

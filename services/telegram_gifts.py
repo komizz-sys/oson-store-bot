@@ -57,11 +57,27 @@ async def resolve_user_id(bot, username: str) -> int | None:
 
 async def fulfill_simple_gift(bot, order: dict) -> tuple[bool, str]:
     """
-    Пытается отправить подарок автоматически.
+    Пытается отправить подарок автоматически. Если в заказе quantity > 1,
+    отправляет подарок несколько раз подряд (максимум 10 за один заказ —
+    столько же, сколько разрешено выбрать в магазине).
     -> (успех: bool, сообщение для админа: str)
     """
     username = order["recipient"] if order["recipient"].startswith("@") else f"@{order['recipient']}"
-    user_id = await resolve_user_id(bot, username)
+
+    # 1) Если при оформлении заказа мы уже точно знали user_id получателя
+    #    (например, заказ "себе") — используем его напрямую, без повторного
+    #    поиска по @username через Telegram API.
+    user_id = order.get("recipient_user_id")
+
+    # 2) Подстраховка для старых заказов без recipient_user_id: если получатель —
+    #    это сам заказчик (username совпадает), берём его user_id из заказа.
+    if not user_id and order.get("username") and username.lower() == f"@{order['username']}".lower():
+        user_id = order.get("user_id")
+
+    # 3) В остальных случаях (подарок другу) пробуем разрешить по @username —
+    #    сработает, только если получатель уже писал этому боту.
+    if not user_id:
+        user_id = await resolve_user_id(bot, username)
 
     if user_id is None:
         return False, (
@@ -70,8 +86,23 @@ async def fulfill_simple_gift(bot, order: dict) -> tuple[bool, str]:
             "этому же боту, затем выполни заказ вручную (или повтори)."
         )
 
-    try:
-        await bot.send_gift(user_id=user_id, gift_id=order["nft_address"])  # используем то же поле под gift_id
-        return True, f"🎁 Подарок отправлен автоматически пользователю {username}."
-    except Exception as e:
-        return False, f"Ошибка при отправке подарка через Bot API: {e}"
+    quantity = order.get("quantity") or 1
+    quantity = max(1, min(int(quantity), 10))  # защита от некорректных/слишком больших значений
+
+    sent = 0
+    for _ in range(quantity):
+        try:
+            await bot.send_gift(user_id=user_id, gift_id=order["nft_address"])  # используем то же поле под gift_id
+            sent += 1
+        except Exception as e:
+            if sent == 0:
+                return False, f"Ошибка при отправке подарка через Bot API: {e}"
+            # Часть подарков уже ушла — сообщаем админу, сколько именно, остальное придётся отправить вручную
+            return False, (
+                f"Отправлено {sent} из {quantity} подарков пользователю {username}, "
+                f"дальше остановилось из-за ошибки: {e}. Оставшиеся ({quantity - sent}) "
+                "отправь вручную."
+            )
+
+    qty_note = f" (x{quantity})" if quantity > 1 else ""
+    return True, f"🎁 Подарок{qty_note} отправлен автоматически пользователю {username}."
