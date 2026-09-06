@@ -1,5 +1,5 @@
 from aiogram import Router, F, Bot
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -40,13 +40,12 @@ class AddGiftStates(StatesGroup):
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
-
-@router.message(Command("addgift"))
+# ДОБАВЛЕН StateFilter('*'), чтобы команда работала всегда
+@router.message(Command("addgift"), StateFilter('*'))
 async def add_gift_start(message: Message, state: FSMContext):
+    await state.clear()  # Принудительно сбрасываем все зависшие шаги
+
     if not is_admin(message.from_user.id):
-        # Раньше здесь был просто return — бот молчал в ответ, и было
-        # невозможно понять, то ли команда сломана, то ли твой Telegram ID
-        # просто не совпадает с тем, что прописан в ADMIN_IDS на Railway.
         await message.answer(
             f"⛔ Команда только для админа.\nТвой ID: {message.from_user.id}\n"
             "Если это ты — добавь этот ID в переменную ADMIN_IDS сервиса Worker на Railway "
@@ -170,7 +169,7 @@ async def admin_help(message: Message):
         "🛠 Админ-команды:\n"
         "/stats — статистика по пользователям и заказам\n"
         "/broadcast — разослать сообщение всем пользователям\n"
-        "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
+        "/order_<id> — посмотреть заказ (напр. /order_5)\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n\n"
         "Подтверждение/отклонение оплаты — кнопками под чеком."
