@@ -3,7 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from database.db import create_order
+from database.db import create_order, allocate_unique_amount, set_expected_amount
 from handlers.states import OrderStates
 from keyboards.user_kb import stars_kb, premium_kb, confirm_order_kb, payment_methods_kb
 from services.prices import get_stars_packages, get_premium_packages, format_uzs
@@ -258,11 +258,27 @@ async def confirm_order(call: CallbackQuery, state: FSMContext):
     await state.set_state(OrderStates.waiting_payment_proof)
 
     import config
+
+    # Уникальная сумма (базовая цена + небольшая случайная надбавка) — чтобы
+    # можно было понять, чей это платёж, по одной только сумме поступления на
+    # карту (нужно для автопроверки оплаты, см. config.SMS_RELAY_CHAT_ID).
+    if config.UNIQUE_AMOUNT_ENABLED:
+        pay_amount = await allocate_unique_amount(data["price"], config.UNIQUE_AMOUNT_MAX_OFFSET)
+        await set_expected_amount(order_id, pay_amount)
+        amount_note = (
+            f"\n\n⚠️ Переведите <b>ровно {format_uzs(pay_amount)}</b> — не округляйте и не "
+            "меняйте сумму, иначе оплата не подтвердится автоматически."
+        )
+    else:
+        pay_amount = data["price"]
+        amount_note = ""
+
     await call.message.edit_text(
         f"✅ Заказ #{order_id} создан на сумму <b>{format_uzs(data['price'])}</b>.\n\n"
         f"Переведите сумму на карту:\n"
         f"<code>{config.PAYMENT_CARD_NUMBER}</code>\n"
-        f"Получатель: {config.PAYMENT_CARD_HOLDER}\n\n"
+        f"Получатель: {config.PAYMENT_CARD_HOLDER}"
+        f"{amount_note}\n\n"
         "После оплаты пришлите сюда скриншот/чек — заказ уйдёт на проверку админу.",
         reply_markup=payment_methods_kb(),
     )

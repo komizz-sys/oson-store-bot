@@ -1,3 +1,5 @@
+import random
+
 import aiosqlite
 import config
 
@@ -23,6 +25,8 @@ CREATE TABLE IF NOT EXISTS orders (
     admin_comment TEXT,
     content_video_url TEXT,          -- видео-инструкция после выполнения
     content_text TEXT,               -- текст-инструкция после выполнения
+    rent_link TEXT,                  -- ссылка от клиента для подключения арендованного гифта
+    expected_amount_uzs INTEGER,     -- уникальная сумма к оплате (price_uzs + анти-коллизийная надбавка)
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
@@ -58,6 +62,8 @@ async def init_db():
             "ALTER TABLE orders ADD COLUMN content_video_url TEXT",
             "ALTER TABLE orders ADD COLUMN content_text TEXT",
             "ALTER TABLE orders ADD COLUMN recipient_user_id INTEGER",
+            "ALTER TABLE orders ADD COLUMN rent_link TEXT",
+            "ALTER TABLE orders ADD COLUMN expected_amount_uzs INTEGER",
         ):
             try:
                 await db.execute(stmt)
@@ -218,6 +224,123 @@ async def attach_payment_proof(order_id: int, file_id: str):
             "UPDATE orders SET payment_proof_file_id=?, status='payment_review' WHERE id=?",
             (file_id, order_id),
         )
+        await db.commit()
+
+
+# Заказы в этих статусах ещё "живые" — их expected_amount_uzs занят и не может
+# быть выдан другому заказу, пока этот не оплатят или не отменят/просрочат.
+UNPAID_STATUSES = ("awaiting_payment", "payment_review")
+
+# Не выдавать сумму дороже (базовая цена + это число) — чтобы разница не
+# бросалась в глаза клиенту и не выглядела как "странная" сумма.
+DEFAULT_MAX_AMOUNT_OFFSET = 500
+
+# Считаем заказ просроченным (и освобождаем его уникальную сумму), если он
+# висит неоплаченным дольше этого времени.
+UNIQUE_AMOUNT_ORDER_TTL_MINUTES = 30
+
+
+async def allocate_unique_amount(base_price_uzs: int, max_offset: int = DEFAULT_MAX_AMOUNT_OFFSET) -> int:
+    """
+    Возвращает base_price_uzs + небольшую случайную надбавку (1..max_offset),
+    гарантированно не совпадающую с суммой ни одного другого сейчас неоплаченного
+    заказа — чтобы по входящей SMS с суммой X можно было однозначно понять,
+    какой именно заказ оплатили, даже если все клиенты платят на одну и ту же
+    личную карту.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        status_placeholders = ",".join("?" for _ in UNPAID_STATUSES)
+        async with db.execute(
+            f"SELECT expected_amount_uzs FROM orders WHERE status IN ({status_placeholders}) "
+            "AND expected_amount_uzs IS NOT NULL",
+            UNPAID_STATUSES,
+        ) as cur:
+            taken = {row[0] async for row in cur}
+
+    candidates = [
+        base_price_uzs + offset
+        for offset in range(1, max_offset + 1)
+        if (base_price_uzs + offset) not in taken
+    ]
+    if not candidates:
+        # Практически нереально при разумном max_offset, но на всякий случай —
+        # не роняем оформление заказа, просто без анти-коллизийной надбавки.
+        return base_price_uzs
+    return random.choice(candidates)
+
+
+async def set_expected_amount(order_id: int, amount: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("UPDATE orders SET expected_amount_uzs=? WHERE id=?", (amount, order_id))
+        await db.commit()
+
+
+async def get_order_by_expected_amount(amount: int) -> dict | None:
+    """Ищет неоплаченный заказ с такой уникальной суммой — используется, когда
+    пришла SMS о поступлении денег на карту, чтобы понять, чей это платёж."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        status_placeholders = ",".join("?" for _ in UNPAID_STATUSES)
+        async with db.execute(
+            f"SELECT * FROM orders WHERE status IN ({status_placeholders}) AND expected_amount_uzs=? "
+            "ORDER BY id DESC LIMIT 1",
+            (*UNPAID_STATUSES, amount),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def expire_stale_unpaid_orders(ttl_minutes: int = UNIQUE_AMOUNT_ORDER_TTL_MINUTES) -> list[dict]:
+    """
+    Помечает старые неоплаченные заказы как rejected (истёк срок), освобождая их
+    уникальную сумму для новых заказов. Нужно, чтобы клиент, который передумал
+    платить, не "занимал" сумму навечно, и не путал ситуацию, если пришлёт
+    оплату по старой (уже переиспользованной) сумме через день.
+    -> список заказов, которые были просрочены (чтобы уведомить клиентов).
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM orders WHERE status = 'awaiting_payment' "
+            f"AND created_at <= datetime('now', '-{int(ttl_minutes)} minutes')"
+        ) as cur:
+            stale = [dict(r) for r in await cur.fetchall()]
+
+        if stale:
+            ids = [o["id"] for o in stale]
+            placeholders = ",".join("?" for _ in ids)
+            await db.execute(
+                f"UPDATE orders SET status='rejected', admin_comment='Истекло время оплаты' "
+                f"WHERE id IN ({placeholders})",
+                ids,
+            )
+            await db.commit()
+    return stale
+
+
+async def get_pending_rent_link_order(user_id: int) -> dict | None:
+    """
+    Самый свежий заказ аренды этого клиента, который уже оплачен, но для
+    которого он ещё не прислал ссылку для подключения гифта. Используется,
+    чтобы понять, что вот это текстовое сообщение с ссылкой — не случайный
+    текст, а именно ответ на видео-инструкцию по конкретному заказу.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT * FROM orders
+               WHERE user_id = ? AND category = 'nft_rent' AND status = 'paid'
+                 AND (rent_link IS NULL OR rent_link = '')
+               ORDER BY id DESC LIMIT 1""",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def set_rent_link(order_id: int, link: str):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("UPDATE orders SET rent_link=? WHERE id=?", (link, order_id))
         await db.commit()
 
 

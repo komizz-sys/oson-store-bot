@@ -41,6 +41,33 @@ def _slugify(title: str) -> str:
     return re.sub(r"[^a-z0-9]", "", title.lower())
 
 
+def _singularize(word: str) -> str:
+    """Грубая деплюрализация одного слова: Roses->Rose, Watches->Watch, Cups->Cup."""
+    if word.lower().endswith(("ches", "shes", "xes")):
+        return word[:-2]
+    if word.lower().endswith("s") and not word.lower().endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _collection_slug(collection_name: str) -> str:
+    """
+    Slug гифта в формате Fragment, например "Eternal Roses" -> "eternalrose".
+
+    ВАЖНО: маркетплейсы (MarketApp/OsonStore) показывают название КОЛЛЕКЦИИ во
+    множественном числе ("Eternal Roses" — коллекция из многих экземпляров),
+    а сам гифт на fragment.com называется в единственном числе: конкретный
+    экземпляр — "Eternal Rose #2200", и его файлы лежат под "eternalrose", а
+    не "eternalroses". Деплюрализуем только последнее слово (первые слова в
+    названии, если есть, во множественное число не переводятся).
+    """
+    words = re.sub(r"[’']", "", collection_name).split()
+    if not words:
+        return ""
+    words[-1] = _singularize(words[-1])
+    return _slugify("".join(words))
+
+
 async def _fetch_gift_image(client: httpx.AsyncClient, nft_name: str) -> str | None:
     """Тянет реальную картинку гифта с nft.fragment.com по его имени/номеру."""
     m = _NAME_NUM_RE.match(nft_name or "")
@@ -183,7 +210,7 @@ async def get_rent_collections() -> list[dict]:
         {
             "name": c["name"],
             "address": c["address"],
-            "image": f"https://fragment.com/file/gifts/{_slugify(c['name'])}/thumb.webp",
+            "image": f"https://fragment.com/file/gifts/{_collection_slug(c['name'])}/thumb.webp",
         }
         for c in raw
     ]

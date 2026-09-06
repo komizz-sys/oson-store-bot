@@ -1,5 +1,5 @@
 from aiogram import Router, F, Bot
-from aiogram.filters import Command, StateFilter
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -15,6 +15,7 @@ from keyboards.admin_kb import admin_fulfill_kb
 from services.prices import format_uzs
 from services.fragment_service import try_auto_fulfill_stars, notify_manual_premium
 from services.marketapp_service import start_rent_payment
+from services.rent_link import send_rent_link_tutorial
 from services.telegram_gifts import fulfill_simple_gift
 from services.public_channel import post_completed_order
 from services.live_feed import push_live_feed_event
@@ -37,15 +38,53 @@ class AddGiftStates(StatesGroup):
     waiting_sticker = State()
 
 
+class GetFileIdStates(StatesGroup):
+    waiting_file = State()
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
-# ДОБАВЛЕН StateFilter('*'), чтобы команда работала всегда
-@router.message(Command("addgift"), StateFilter('*'))
-async def add_gift_start(message: Message, state: FSMContext):
-    await state.clear()  # Принудительно сбрасываем все зависшие шаги
 
+@router.message(Command("getfileid"))
+async def get_file_id_start(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
+        return
+    await state.set_state(GetFileIdStates.waiting_file)
+    await message.answer(
+        "📎 Пришли (или перешли) сюда видео с туром аренды — отвечу его file_id.\n"
+        "Его нужно один раз вписать в переменную RENT_TUTORIAL_VIDEO на Railway "
+        "(сервис Worker) и перезапустить бота."
+    )
+
+
+@router.message(GetFileIdStates.waiting_file, Command("cancel"))
+async def get_file_id_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Отменено.")
+
+
+@router.message(GetFileIdStates.waiting_file, F.video)
+async def get_file_id_video(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "✅ file_id этого видео:\n<code>" + message.video.file_id + "</code>\n\n"
+        "Скопируй и вставь как значение переменной <code>RENT_TUTORIAL_VIDEO</code> "
+        "на Railway (сервис Worker) → Variables → перезапусти сервис."
+    )
+
+
+@router.message(GetFileIdStates.waiting_file)
+async def get_file_id_wrong_type(message: Message):
+    await message.answer("Это не видео. Пришли именно видеофайл (или /cancel).")
+
+
+@router.message(Command("addgift"))
+async def add_gift_start(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        # Раньше здесь был просто return — бот молчал в ответ, и было
+        # невозможно понять, то ли команда сломана, то ли твой Telegram ID
+        # просто не совпадает с тем, что прописан в ADMIN_IDS на Railway.
         await message.answer(
             f"⛔ Команда только для админа.\nТвой ID: {message.from_user.id}\n"
             "Если это ты — добавь этот ID в переменную ADMIN_IDS сервиса Worker на Railway "
@@ -169,8 +208,9 @@ async def admin_help(message: Message):
         "🛠 Админ-команды:\n"
         "/stats — статистика по пользователям и заказам\n"
         "/broadcast — разослать сообщение всем пользователям\n"
-        "/order_<id> — посмотреть заказ (напр. /order_5)\n"
+        "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
+        "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n\n"
         "Подтверждение/отклонение оплаты — кнопками под чеком."
     )
@@ -240,24 +280,13 @@ async def stats_cmd(message: Message):
     )
 
 
-@router.callback_query(F.data.startswith("admin:approve:"))
-async def approve_payment(call: CallbackQuery, bot: Bot):
-    if not is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
-        return
-
-    order_id = int(call.data.split(":")[2])
-    order = await get_order(order_id)
-    if not order:
-        await call.answer("Заказ не найден", show_alert=True)
-        return
-
+async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
+    """
+    Всё, что должно произойти, когда оплата заказа подтверждена — неважно,
+    админ нажал «✅ Подтверждено» вручную или это подтвердилось автоматически
+    (по совпадению уникальной суммы с SMS о поступлении на карту).
+    """
     await set_order_status(order_id, "paid")
-    await call.message.edit_caption(
-        caption=(call.message.caption or "") + "\n\n✅ Оплата подтверждена",
-        reply_markup=admin_fulfill_kb(order_id),
-    )
-    await call.answer("Подтверждено")
 
     lang = await _get_user_language(order["user_id"])
     await bot.send_message(
@@ -299,6 +328,17 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
         await start_rent_payment(
             bot, order, order["nft_address"], float(order["base_price_per_day_gram"]), order["rent_days"]
         )
+        await send_rent_link_tutorial(bot, order)
+        if not config.RENT_TUTORIAL_VIDEO:
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        "⚠️ RENT_TUTORIAL_VIDEO не настроен — клиенту ушёл только текст, "
+                        "без видео. Отправь мне видео через /getfileid, чтобы это исправить.",
+                    )
+                except Exception:
+                    pass
 
     elif order["category"] == "simple_gift":
         success, note = await fulfill_simple_gift(bot, order)
@@ -316,6 +356,27 @@ async def approve_payment(call: CallbackQuery, bot: Bot):
                 await bot.send_message(admin_id, f"Заказ #{order_id}: {note}")
             except Exception:
                 pass
+
+
+@router.callback_query(F.data.startswith("admin:approve:"))
+async def approve_payment(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    order_id = int(call.data.split(":")[2])
+    order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+
+    await call.message.edit_caption(
+        caption=(call.message.caption or "") + "\n\n✅ Оплата подтверждена",
+        reply_markup=admin_fulfill_kb(order_id),
+    )
+    await call.answer("Подтверждено")
+
+    await finalize_payment(bot, order_id, order)
 
 
 @router.callback_query(F.data.startswith("admin:reject:"))

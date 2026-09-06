@@ -32,6 +32,11 @@
    - `RENT_FEE_REFUND_PERCENT` = `40`
    - `STAR_UNIT_PRICE_UZS` = `213.3`
    - `PAYMENT_CARD_NUMBER`, `PAYMENT_CARD_HOLDER` — твои реквизиты для оплаты
+   - `RENT_TUTORIAL_VIDEO` — file_id видео-тура по аренде (необязательно сразу;
+     получить его: напиши боту `/getfileid` и пришли видео, впиши сюда результат)
+   - `UNIQUE_AMOUNT_ENABLED`, `UNIQUE_AMOUNT_MAX_OFFSET`, `SMS_RELAY_CHAT_ID` —
+     автопроверка оплаты по SMS с карты (см. раздел ниже — пока выключено по
+     умолчанию, включать только после теста с реальными SMS от твоего банка)
 
 3. После сохранения переменных Railway сам перезапустит бота
 
