@@ -243,3 +243,73 @@ async def get_all_user_ids() -> list[int]:
     async with aiosqlite.connect(config.DB_PATH) as db:
         async with db.execute("SELECT user_id FROM users") as cur:
             return [row[0] async for row in cur]
+
+
+async def get_user_spend_stats(user_id: int) -> dict:
+    """
+    Личная статистика трат конкретного пользователя (для вкладки "Profil"):
+    сколько потратил по каждой категории + всего + его место в общем рейтинге
+    по сумме трат (по PAID_STATUSES, за всё время).
+    """
+    status_placeholders = ",".join("?" for _ in PAID_STATUSES)
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            f"""SELECT category, COALESCE(SUM(price_uzs), 0)
+                FROM orders WHERE user_id = ? AND status IN ({status_placeholders})
+                GROUP BY category""",
+            [user_id, *PAID_STATUSES],
+        ) as cur:
+            by_category = {row[0]: row[1] async for row in cur}
+
+        async with db.execute(
+            f"""SELECT user_id, SUM(price_uzs) AS total FROM orders
+                WHERE status IN ({status_placeholders})
+                GROUP BY user_id ORDER BY total DESC""",
+            list(PAID_STATUSES),
+        ) as cur:
+            leaderboard = await cur.fetchall()
+
+    total = sum(by_category.values())
+    rank = None
+    for i, row in enumerate(leaderboard, start=1):
+        if row[0] == user_id:
+            rank = i
+            break
+
+    return {
+        "by_category": by_category,
+        "total_uzs": total,
+        "rank": rank,
+        "total_users_ranked": len(leaderboard),
+    }
+
+
+async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
+    """
+    Топ клиентов по сумме трат (для вкладки "TOP"). since_sql=None — за всё время.
+    -> [{"user_id": int, "username": str|None, "full_name": str|None,
+         "total_uzs": int, "orders_count": int}]
+    """
+    status_placeholders = ",".join("?" for _ in PAID_STATUSES)
+    where = f"o.status IN ({status_placeholders})"
+    params: list = list(PAID_STATUSES)
+    if since_sql:
+        where += " AND o.created_at >= ?"
+        params.append(since_sql)
+    params.append(limit)
+
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            f"""SELECT o.user_id, u.username, u.full_name,
+                       SUM(o.price_uzs) AS total_uzs, COUNT(*) AS orders_count
+                FROM orders o
+                LEFT JOIN users u ON u.user_id = o.user_id
+                WHERE {where}
+                GROUP BY o.user_id
+                ORDER BY total_uzs DESC
+                LIMIT ?""",
+            params,
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]

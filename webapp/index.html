@@ -134,33 +134,30 @@
   <!-- ================= TARIX ================= -->
   <div id="view-tarix" class="view-hidden p-4">
     <h2 class="text-lg font-bold mb-4" data-i18n="history_title">Xaridlar tarixi</h2>
-    <div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">
-      <p class="text-3xl mb-2">🛒</p>
-      <p class="text-sm" data-i18n="history_empty">Hozircha xaridlar tarixi bo'sh.</p>
-      <p class="text-[10px] mt-2 text-gray-500" data-i18n="history_hint">To'liq tarix — botdagi "Mening buyurtmalarim" bo'limida.</p>
+    <div id="tarix-list" class="space-y-2">
+      <div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">
+        <p class="text-3xl mb-2">🛒</p>
+        <p class="text-sm" data-i18n="history_empty">Hozircha xaridlar tarixi bo'sh.</p>
+      </div>
     </div>
   </div>
 
   <!-- ================= TOP ================= -->
   <div id="view-top" class="view-hidden p-4">
     <h2 class="text-lg font-bold mb-1" data-i18n="top_title">Reyting</h2>
-    <p class="text-xs text-gray-400 mb-4" data-i18n="top_subtitle">Eng faol mijozlar</p>
-    <div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">
-      <p class="text-3xl mb-2">🏆</p>
-      <p class="text-sm font-semibold text-white mb-1" data-i18n="top_forming">Reyting shakllanmoqda</p>
-      <p class="text-xs" data-i18n="top_hint">Birinchi xaridni amalga oshiring!</p>
+    <p class="text-xs text-gray-400 mb-3" data-i18n="top_subtitle">Eng faol mijozlar</p>
+    <div class="flex gap-2 mb-4 overflow-x-auto">
+      <button id="top-period-today" onclick="setTopPeriod('today')" class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-300 whitespace-nowrap" data-i18n="top_period_today">Bugun</button>
+      <button id="top-period-week" onclick="setTopPeriod('week')" class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-300 whitespace-nowrap" data-i18n="top_period_week">Hafta</button>
+      <button id="top-period-month" onclick="setTopPeriod('month')" class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-300 whitespace-nowrap" data-i18n="top_period_month">Oy</button>
+      <button id="top-period-all" onclick="setTopPeriod('all')" class="px-3 py-1.5 rounded-full bg-gradient-to-r from-neon-yellow to-amber-500 text-black text-[11px] font-bold whitespace-nowrap" data-i18n="top_period_all">Hammasi</button>
     </div>
-  </div>
-
-  <!-- ================= REFERAL ================= -->
-  <div id="view-referal" class="view-hidden p-4 text-center">
-    <div class="text-5xl mb-3">👥</div>
-    <h2 class="text-xl font-bold mb-2" data-i18n="referral_title">Referal tizimi</h2>
-    <p class="text-xs text-gray-400 mb-6" data-i18n="referral_subtitle">Do'stlaringizni taklif qiling!</p>
-    <div class="bg-white/5 border border-white/10 rounded-2xl p-4 text-left mb-4">
-      <p class="text-xs text-gray-400 mb-1" data-i18n="referral_link_label">Sizning referal havolangiz:</p>
-      <div class="bg-black/40 p-2.5 rounded-xl text-xs font-mono text-neon-blue truncate mb-3" id="referral-link">...</div>
-      <button onclick="copyReferral()" class="w-full py-2.5 rounded-xl bg-neon-blue font-bold text-xs text-white" data-i18n="referral_copy">Havolani nusxalash</button>
+    <div id="top-list" class="space-y-2">
+      <div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">
+        <p class="text-3xl mb-2">🏆</p>
+        <p class="text-sm font-semibold text-white mb-1" data-i18n="top_forming">Reyting shakllanmoqda</p>
+        <p class="text-xs" data-i18n="top_hint">Birinchi xaridni amalga oshiring!</p>
+      </div>
     </div>
   </div>
 
@@ -174,6 +171,7 @@
         <p id="profile-id" class="text-[10px] text-gray-400 font-mono"></p>
       </div>
     </div>
+    <div id="profile-stats-box" class="hidden bg-white/5 border border-white/10 rounded-2xl p-4 mb-3"></div>
     <div class="bg-white/5 border border-white/10 rounded-xl p-3 mb-3 flex justify-around items-center text-xl">
       <span class="flag-wave">🇺🇿</span><span class="flag-wave">🇷🇺</span><span class="flag-wave">🇬🇧</span>
     </div>
@@ -206,9 +204,6 @@
     </button>
     <button onclick="switchTab('top')" id="tab-top" class="nav-btn flex flex-col items-center text-gray-500 hover:text-white">
       <span class="text-xl mb-0.5">🏆</span><span class="text-[9px]">TOP</span>
-    </button>
-    <button onclick="switchTab('referal')" id="tab-referal" class="nav-btn flex flex-col items-center text-gray-500 hover:text-white">
-      <span class="text-xl mb-0.5">👥</span><span class="text-[9px]" data-i18n="nav_referral">Referal</span>
     </button>
     <button onclick="switchTab('profil')" id="tab-profil" class="nav-btn flex flex-col items-center text-gray-500 hover:text-white">
       <span class="text-xl mb-0.5">👤</span><span class="text-[9px]" data-i18n="nav_profile">Profil</span>

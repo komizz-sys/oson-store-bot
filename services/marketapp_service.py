@@ -168,12 +168,23 @@ async def get_rent_collections() -> list[dict]:
     except Exception:
         return []
 
-    # Логотип коллекции = картинка гифта #1 этой коллекции с nft.fragment.com
-    # (тот же публичный паттерн, что уже используется для карточек товаров)
-    async with httpx.AsyncClient() as client:
-        images = await asyncio.gather(
-            *[_fetch_gift_image(client, f"{c['name']} #1") for c in raw]
-        )
+    # Логотип коллекции = картинка РЕАЛЬНО существующего сейчас в аренде лота
+    # этой коллекции (нельзя просто угадать номер вроде "#1" — такого экземпляра
+    # может не быть, тогда nft.fragment.com отдаст 404 и логотип не покажется).
+    async def fetch_one_logo(collection: dict) -> str | None:
+        try:
+            data = await marketapp_api.get_gifts_for_rent(
+                sort_by="recently_touch", collection_address=collection["address"]
+            )
+        except Exception:
+            return None
+        items = data.get("items", [])
+        if not items:
+            return None
+        async with httpx.AsyncClient() as client:
+            return await _fetch_gift_image(client, items[0]["nft_name"])
+
+    images = await asyncio.gather(*[fetch_one_logo(c) for c in raw])
 
     _collections_cache = [
         {"name": c["name"], "address": c["address"], "image": image}

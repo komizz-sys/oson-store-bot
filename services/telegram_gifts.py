@@ -14,22 +14,62 @@ Telegram отдаёт информацию по @username только если 
 написать /start этому же боту — иначе бот не сможет определить его user_id.
 """
 
+import json
+import os
+
 import config
 
 STAR_UNIT_PRICE_UZS = config.STAR_UNIT_PRICE_UZS
+
+EXTRA_GIFTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "extra_gifts.json")
 
 
 def gift_price_uzs(star_count: int) -> int:
     return round(star_count * STAR_UNIT_PRICE_UZS)
 
 
+def _load_extra_gifts() -> list[dict]:
+    """
+    Подарки, которых уже НЕТ в getAvailableGifts (Telegram снял их с продажи
+    в обычном магазине), но которые всё ещё можно ПОДАРИТЬ через sendGift,
+    если знать их точный gift_id. Telegram не даёт способа узнать
+    star_count/эмодзи для такого id программно — эти данные вписываются
+    в data/extra_gifts.json вручную (см. файл — там же лежит инструкция).
+    Если файла нет или он битый — просто игнорируем, ничего не падает.
+    """
+    try:
+        with open(EXTRA_GIFTS_PATH, encoding="utf-8") as f:
+            items = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+    result = []
+    for it in items:
+        if not it.get("id") or not it.get("star_count"):
+            continue  # пропускаем некорректно заполненные строки, а не падаем
+        star_count = int(it["star_count"])
+        result.append({
+            "id": str(it["id"]),
+            "star_count": star_count,
+            # Явно заданная цена (price_uzs) в приоритете — так можно продавать
+            # снятые с продажи подарки по своей фиксированной цене.
+            "price_uzs": int(it["price_uzs"]) if it.get("price_uzs") else gift_price_uzs(star_count),
+            "sticker_emoji": it.get("sticker_emoji", "🎁"),
+            "image_url": it.get("image_url"),
+        })
+    return result
+
+
 async def get_catalog(bot) -> list[dict]:
     """
-    Живой каталог простых (не-limited, без апгрейда) подарков.
-    -> [{'id': str, 'star_count': int, 'price_uzs': int, 'emoji': str}]
+    Каталог простых (не-limited, без апгрейда) подарков: то, что сейчас
+    официально продаётся в Telegram (getAvailableGifts) + вручную добавленные
+    "снятые с продажи" подарки из data/extra_gifts.json.
+    -> [{'id': str, 'star_count': int, 'price_uzs': int, 'sticker_emoji': str}]
     """
     gifts = await bot.get_available_gifts()
     result = []
+    seen_ids = set()
     for g in gifts.gifts:
         # limited-выпуски и такие, что требуют апгрейда, пропускаем —
         # это обычные "простые" подарки, не коллекционные NFT
@@ -41,6 +81,13 @@ async def get_catalog(bot) -> list[dict]:
             "price_uzs": gift_price_uzs(g.star_count),
             "sticker_emoji": getattr(g.sticker, "emoji", "🎁"),
         })
+        seen_ids.add(g.id)
+
+    for extra in _load_extra_gifts():
+        if extra["id"] not in seen_ids:  # не дублируем, если Telegram вдруг снова его продаёт
+            result.append(extra)
+            seen_ids.add(extra["id"])
+
     result.sort(key=lambda x: x["star_count"])
     return result
 

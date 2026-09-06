@@ -7,9 +7,8 @@ const I18N = {
     ijara_title: "Gift Arendasi", history_title: "Xaridlar tarixi",
     history_empty: "Hozircha xaridlar tarixi bo'sh.", history_hint: "To'liq tarix - botdagi \"Mening buyurtmalarim\" bo'limida.",
     top_title: "Reyting", top_subtitle: "Eng faol mijozlar", top_forming: "Reyting shakllanmoqda", top_hint: "Birinchi xaridni amalga oshiring!",
-    referral_title: "Referal tizimi", referral_subtitle: "Do'stlaringizni taklif qiling!", referral_link_label: "Sizning referal havolangiz:", referral_copy: "Havolani nusxalash",
     profile_operator: "Operator", profile_channel: "\ud83d\udce2 Bot kanali", profile_orders_channel: "\ud83d\uded2 Savdo/Orderlar",
-    nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_referral: "Referal", nav_profile: "Profil",
+    nav_main: "Asosiy", nav_rent: "Ijara", nav_history: "Tarix", nav_profile: "Profil",
     modal_to_whom: "Kimga?", modal_to_self: "O'zimga", modal_to_friend: "Do'stimga",
     modal_recipient_label: "Qabul qiluvchi (@username):", modal_message_label: "Xabar (ixtiyoriy):",
     modal_message_placeholder: "Tabrik matni...", modal_rent_days: "Necha kunga?", modal_gift_quantity: "Nechta dona?",
@@ -25,14 +24,20 @@ const I18N = {
     custom_amount: "Boshqa miqdor", custom_amount_hint: "O'zingiz kiriting", custom_amount_label: "Nechta Stars?",
     recent_recipient_label: "Yaqinda:", collection_all: "Barcha kolleksiyalar", collection_title: "Kolleksiya bo'yicha filtr",
     live_label: "JONLI", minutes_ago: "daqiqa oldin", hours_ago: "soat oldin",
+    status_awaiting_payment: "To'lov kutilmoqda", status_payment_review: "Tekshirilmoqda", status_paid: "To'landi",
+    status_fulfilling: "Bajarilmoqda", status_completed: "Bajarildi", status_rejected: "Bekor qilindi",
+    cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Sovg'a", cat_nft_rent: "\ud83d\uddbc Ijara",
+    top_period_today: "Bugun", top_period_week: "Hafta", top_period_month: "Oy", top_period_all: "Hammasi",
+    top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.",
+    profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
+    history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
     history_empty: "Пока пусто.", history_hint: "Полная история - в разделе «Мои заказы» в боте.",
     top_title: "Рейтинг", top_subtitle: "Самые активные клиенты", top_forming: "Рейтинг формируется", top_hint: "Сделайте первую покупку!",
-    referral_title: "Реферальная система", referral_subtitle: "Приглашай друзей и получай бонусы!", referral_link_label: "Твоя реферальная ссылка:", referral_copy: "Скопировать ссылку",
     profile_operator: "Оператор", profile_channel: "\ud83d\udce2 Канал бота", profile_orders_channel: "\ud83d\uded2 Заказы/Отзывы",
-    nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_referral: "Рефералы", nav_profile: "Профиль",
+    nav_main: "Главная", nav_rent: "Аренда", nav_history: "История", nav_profile: "Профиль",
     modal_to_whom: "Кому?", modal_to_self: "Себе", modal_to_friend: "Другу",
     modal_recipient_label: "Получатель (@username):", modal_message_label: "Сообщение (необязательно):",
     modal_message_placeholder: "Текст поздравления...", modal_rent_days: "На сколько дней?", modal_gift_quantity: "Сколько штук?",
@@ -48,14 +53,20 @@ const I18N = {
     custom_amount: "Другое количество", custom_amount_hint: "Введите сами", custom_amount_label: "Сколько звёзд?",
     recent_recipient_label: "Недавнее:", collection_all: "Все коллекции", collection_title: "Фильтр по коллекции",
     live_label: "СЕЙЧАС", minutes_ago: "мин назад", hours_ago: "ч назад",
+    status_awaiting_payment: "Ждём оплату", status_payment_review: "Проверяется", status_paid: "Оплачено",
+    status_fulfilling: "Выполняется", status_completed: "Выполнено", status_rejected: "Отменено",
+    cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Подарок", cat_nft_rent: "\ud83d\uddbc Аренда",
+    top_period_today: "Сегодня", top_period_week: "Неделя", top_period_month: "Месяц", top_period_all: "Всё время",
+    top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.",
+    profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
+    history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
     history_empty: "Nothing here yet.", history_hint: "Full history is in \"My orders\" in the bot chat.",
     top_title: "Rating", top_subtitle: "Most active customers", top_forming: "Rating is forming", top_hint: "Make your first purchase!",
-    referral_title: "Referral program", referral_subtitle: "Invite friends and get bonuses!", referral_link_label: "Your referral link:", referral_copy: "Copy link",
     profile_operator: "Operator", profile_channel: "\ud83d\udce2 Bot channel", profile_orders_channel: "\ud83d\uded2 Orders channel",
-    nav_main: "Home", nav_rent: "Rent", nav_history: "History", nav_referral: "Referral", nav_profile: "Profile",
+    nav_main: "Home", nav_rent: "Rent", nav_history: "History", nav_profile: "Profile",
     modal_to_whom: "For whom?", modal_to_self: "Myself", modal_to_friend: "A friend",
     modal_recipient_label: "Recipient (@username):", modal_message_label: "Message (optional):",
     modal_message_placeholder: "Congratulation text...", modal_rent_days: "For how many days?", modal_gift_quantity: "How many?",
@@ -71,6 +82,13 @@ const I18N = {
     custom_amount: "Custom amount", custom_amount_hint: "Enter your own", custom_amount_label: "How many Stars?",
     recent_recipient_label: "Recent:", collection_all: "All collections", collection_title: "Filter by collection",
     live_label: "LIVE", minutes_ago: "min ago", hours_ago: "h ago",
+    status_awaiting_payment: "Awaiting payment", status_payment_review: "Under review", status_paid: "Paid",
+    status_fulfilling: "In progress", status_completed: "Completed", status_rejected: "Cancelled",
+    cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Gift", cat_nft_rent: "\ud83d\uddbc Rent",
+    top_period_today: "Today", top_period_week: "Week", top_period_month: "Month", top_period_all: "All time",
+    top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.",
+    profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
+    history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
   },
 };
 
@@ -142,7 +160,7 @@ function normalizeItem(cat) {
   return function(raw) {
     if (cat === "stars") return { kind: "stars", title: raw.amount.toLocaleString("ru-RU") + " Stars", price: raw.price_uzs, emoji: "⭐️", raw: raw };
     if (cat === "premium") return { kind: "premium", title: raw.label, price: raw.price_uzs, emoji: "👑", raw: raw };
-    if (cat === "simple_gift") return { kind: "simple_gift", title: raw.star_count + "⭐", price: raw.price_uzs, emoji: raw.sticker_emoji || "🎁", raw: raw };
+    if (cat === "simple_gift") return { kind: "simple_gift", title: raw.star_count + "⭐", price: raw.price_uzs, emoji: raw.sticker_emoji || "🎁", image: raw.image_url || null, raw: raw };
     if (cat === "nft_rent") return { kind: "nft_rent", title: raw.name, price: raw.price_per_day_uzs_with_markup, emoji: pickGiftEmoji(raw.name), image: raw.image_url, previewUrl: raw.preview_url, raw: raw };
   };
 }
@@ -455,7 +473,7 @@ function setCategory(cat) {
 
 function switchTab(tab) {
   currentTab = tab;
-  ["asosiy","ijara","tarix","top","referal","profil"].forEach(function(x) {
+  ["asosiy","ijara","tarix","top","profil"].forEach(function(x) {
     document.getElementById("view-" + x).classList.add("view-hidden");
   });
   document.getElementById("view-" + tab).classList.remove("view-hidden");
@@ -465,6 +483,9 @@ function switchTab(tab) {
   document.getElementById("tab-" + tab).classList.remove("text-gray-500");
   document.getElementById("tab-" + tab).classList.add("text-neon-blue");
   if (tab === "ijara") renderIjara();
+  if (tab === "tarix") renderHistory();
+  if (tab === "top") renderLeaderboard(currentTopPeriod);
+  if (tab === "profil") renderProfileStats();
 }
 
 /* ---------------- Модалка оплаты ---------------- */
@@ -686,12 +707,6 @@ function copyCard() {
   });
 }
 
-function copyReferral() {
-  const link = document.getElementById("referral-link").textContent;
-  navigator.clipboard.writeText(link);
-  if (tg && tg.showAlert) tg.showAlert(t("copied")); else alert(t("copied"));
-}
-
 function openTgUsername(username) {
   if (!username) return;
   if (tg && tg.openTelegramLink) tg.openTelegramLink("https://t.me/" + username);
@@ -784,14 +799,175 @@ function initProfile() {
   document.getElementById("profile-avatar").textContent = (u.first_name ? u.first_name.charAt(0) : "?").toUpperCase();
 }
 
-async function initReferral() {
+/* ---------------- API бота-магазина (Tarix/TOP/Profil) ---------------- */
+let shopApiUrl = null;
+async function getShopApiUrl() {
+  if (shopApiUrl !== null) return shopApiUrl;
   try {
-    const u = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
-    const res = await fetch("/api/bot_info");
+    const res = await fetch("/api/config");
     const data = await res.json();
-    const ref = u ? "https://t.me/" + data.username + "?start=ref" + u.id : "https://t.me/" + data.username;
-    document.getElementById("referral-link").textContent = ref;
-  } catch (e) { /* тихо игнорируем */ }
+    shopApiUrl = data.shop_api_url || "";
+  } catch (e) {
+    shopApiUrl = "";
+  }
+  return shopApiUrl;
+}
+
+const CATEGORY_EMOJI = { stars: "\u2b50", premium: "\ud83d\udc8e", simple_gift: "\ud83c\udf81", nft_rent: "\ud83d\uddbc" };
+const STATUS_KEY = {
+  awaiting_payment: "status_awaiting_payment", payment_review: "status_payment_review",
+  paid: "status_paid", fulfilling: "status_fulfilling", completed: "status_completed", rejected: "status_rejected",
+};
+
+function formatOrderDate(sqlDate) {
+  if (!sqlDate) return "";
+  // формат из sqlite: "YYYY-MM-DD HH:MM:SS" (UTC) — просто показываем как есть, без пересчёта пояса
+  return sqlDate.replace("T", " ").slice(0, 16);
+}
+
+async function renderHistory() {
+  const listEl = document.getElementById("tarix-list");
+  const base = await getShopApiUrl();
+  if (!base || !tg || !tg.initData) {
+    listEl.innerHTML =
+      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<p class="text-3xl mb-2">\ud83d\uded2</p><p class="text-sm">' + t("history_open_bot") + '</p></div>';
+    return;
+  }
+  listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-6">' + t("history_loading") + '</div>';
+
+  try {
+    const res = await fetch(base + "/public/my_orders", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: tg.initData }),
+    });
+    const data = await res.json();
+    const orders = data.orders || [];
+
+    if (!orders.length) {
+      listEl.innerHTML =
+        '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+        '<p class="text-3xl mb-2">\ud83d\uded2</p><p class="text-sm">' + t("history_empty") + '</p></div>';
+      return;
+    }
+
+    listEl.innerHTML = orders.map(function(o) {
+      const emoji = CATEGORY_EMOJI[o.category] || "\ud83d\udce6";
+      const statusLabel = t(STATUS_KEY[o.status] || o.status);
+      const statusColor = (o.status === "completed") ? "text-green-400" : (o.status === "rejected") ? "text-red-400" : "text-gray-400";
+      return '<div class="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center justify-between gap-2">' +
+        '<div class="flex items-center gap-2.5 min-w-0">' +
+          '<span class="text-xl flex-shrink-0">' + emoji + '</span>' +
+          '<div class="min-w-0">' +
+            '<div class="text-xs font-semibold text-white truncate">' + o.item_name + '</div>' +
+            '<div class="text-[10px] ' + statusColor + '">' + statusLabel + ' \u00b7 ' + formatOrderDate(o.created_at) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="text-xs font-bold text-neon-blue flex-shrink-0">' + fmtUZS(o.price_uzs) + '</div>' +
+      '</div>';
+    }).join("");
+  } catch (e) {
+    listEl.innerHTML =
+      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<p class="text-sm">' + t("history_empty") + '</p></div>';
+  }
+}
+
+let currentTopPeriod = "all";
+function setTopPeriod(period) {
+  currentTopPeriod = period;
+  ["today","week","month","all"].forEach(function(p) {
+    const btn = document.getElementById("top-period-" + p);
+    if (!btn) return;
+    btn.className = p === period
+      ? "px-3 py-1.5 rounded-full bg-gradient-to-r from-neon-yellow to-amber-500 text-black text-[11px] font-bold whitespace-nowrap"
+      : "px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-300 whitespace-nowrap";
+  });
+  renderLeaderboard(period);
+}
+
+async function renderLeaderboard(period) {
+  const listEl = document.getElementById("top-list");
+  const base = await getShopApiUrl();
+  if (!base) {
+    listEl.innerHTML =
+      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<p class="text-3xl mb-2">\ud83c\udfc6</p><p class="text-sm font-semibold text-white mb-1">' + t("top_forming") + '</p>' +
+      '<p class="text-xs">' + t("top_hint") + '</p></div>';
+    return;
+  }
+  listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-6">' + t("history_loading") + '</div>';
+
+  const myId = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+
+  try {
+    const res = await fetch(base + "/public/leaderboard?period=" + period);
+    const data = await res.json();
+    const rows = data.leaderboard || [];
+
+    if (!rows.length) {
+      listEl.innerHTML =
+        '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+        '<p class="text-3xl mb-2">\ud83c\udfc6</p><p class="text-sm font-semibold text-white mb-1">' + t("top_forming") + '</p>' +
+        '<p class="text-xs">' + t("top_hint") + '</p></div>';
+      return;
+    }
+
+    const medal = ["\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];
+    listEl.innerHTML = rows.map(function(r, i) {
+      const name = r.full_name || (r.username ? "@" + r.username : "ID " + r.user_id);
+      const isMe = myId && r.user_id === myId;
+      const rankBadge = i < 3 ? '<span class="text-lg">' + medal[i] + '</span>' : '<span class="text-xs text-gray-500 w-5 text-center">' + (i + 1) + '</span>';
+      return '<div class="flex items-center justify-between gap-2 rounded-xl p-3 ' +
+        (isMe ? "bg-neon-blue/10 border border-neon-blue/40" : "bg-white/5 border border-white/10") + '">' +
+        '<div class="flex items-center gap-3 min-w-0">' +
+          rankBadge +
+          '<div class="min-w-0">' +
+            '<div class="text-xs font-semibold text-white truncate">' + name + (isMe ? ' \u00b7 <span class="text-neon-blue">' + t("top_you") + '</span>' : '') + '</div>' +
+            '<div class="text-[10px] text-gray-400">' + r.orders_count + ' ' + t("top_orders_suffix") + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="text-xs font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(r.total_uzs) + '</div>' +
+      '</div>';
+    }).join("");
+  } catch (e) {
+    listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-6">' + t("top_empty") + '</div>';
+  }
+}
+
+async function renderProfileStats() {
+  const box = document.getElementById("profile-stats-box");
+  const base = await getShopApiUrl();
+  if (!base || !tg || !tg.initData) { box.classList.add("hidden"); return; }
+
+  try {
+    const res = await fetch(base + "/public/my_stats", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: tg.initData }),
+    });
+    const stats = await res.json();
+
+    const catRows = Object.keys(CATEGORY_EMOJI).map(function(cat) {
+      const amount = (stats.by_category || {})[cat] || 0;
+      if (!amount) return "";
+      return '<div class="flex justify-between items-center text-xs py-1.5 border-b border-white/5 last:border-0">' +
+        '<span class="text-gray-300">' + t("cat_" + cat) + '</span>' +
+        '<span class="font-semibold text-white">' + fmtUZS(amount) + '</span></div>';
+    }).join("");
+
+    box.classList.remove("hidden");
+    box.innerHTML =
+      '<div class="flex justify-between items-center mb-2">' +
+        '<h3 class="text-xs font-bold text-gray-300">' + t("profile_stats_title") + '</h3>' +
+        (stats.rank ? '<span class="text-[10px] text-neon-yellow font-semibold">' + t("profile_stats_rank") + ': #' + stats.rank + '</span>' : '') +
+      '</div>' +
+      catRows +
+      '<div class="flex justify-between items-center text-xs pt-2 mt-1 border-t border-white/10">' +
+        '<span class="font-bold text-white">' + t("profile_stats_total") + '</span>' +
+        '<span class="font-bold text-neon-blue">' + fmtUZS(stats.total_uzs || 0) + '</span></div>';
+  } catch (e) {
+    box.classList.add("hidden");
+  }
 }
 
 async function renderRentTerms() {
@@ -805,7 +981,6 @@ async function renderRentTerms() {
 /* ---------------- Init ---------------- */
 applyI18n();
 initProfile();
-initReferral();
 initSupportInfo();
 initLiveFeed();
 

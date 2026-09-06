@@ -1,19 +1,22 @@
 """
-Маленький защищённый HTTP-сервер, который отдаёт доход по заказам.
-Работает в ТОМ ЖЕ процессе, что и сам бот (bot.py), — поэтому имеет
-прямой доступ к той же базе данных без танцев с общими volume на Railway
-(Railway не умеет шарить один volume между двумя разными сервисами).
+Лёгкий HTTP-сервер, работающий в ТОМ ЖЕ процессе, что и сам бот (bot.py), —
+поэтому имеет прямой доступ к той же базе данных без танцев с общими volume
+на Railway (Railway не умеет шарить один volume между двумя разными сервисами).
 
-Использует его отдельный бот-аналитик (analytics_bot) — стучится сюда
-по HTTP с секретным заголовком, чтобы узнать доход за период, а расходы
-считает сам (см. ANALYTICS_API_SECRET в .env — должен совпадать в обоих
-ботах).
+Два вида эндпоинтов:
+- /internal/stats — закрытый секретом, только для отдельного бота-аналитика
+  (см. ANALYTICS_API_SECRET в .env — должен совпадать в обоих ботах).
+- /public/* — открытые, их дёргает мини-апп магазина (Tarix/TOP/Profil).
+  Личные данные (история заказов, своя статистика) отдаются только после
+  проверки подписи Telegram initData — иначе можно было бы подставить чужой
+  user_id и увидеть заказы другого человека.
 """
 
 from aiohttp import web
 
 import config
-from database.db import get_revenue_stats
+from database.db import get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard
+from services.telegram_auth import validate_init_data
 
 PERIOD_TO_SQL = {
     "today": "datetime('now', 'start of day')",
@@ -21,6 +24,15 @@ PERIOD_TO_SQL = {
     "month": "datetime('now', '-30 day')",
     "all": None,
 }
+
+
+async def _period_since_sql(period: str) -> str | None:
+    if PERIOD_TO_SQL.get(period) is None:
+        return None
+    import aiosqlite
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(f"SELECT {PERIOD_TO_SQL[period]}") as cur:
+            return (await cur.fetchone())[0]
 
 
 async def handle_stats(request: web.Request) -> web.Response:
@@ -34,27 +46,80 @@ async def handle_stats(request: web.Request) -> web.Response:
     if period not in PERIOD_TO_SQL:
         return web.json_response({"error": f"unknown period, expected one of {list(PERIOD_TO_SQL)}"}, status=400)
 
-    since_sql = None
-    if PERIOD_TO_SQL[period] is not None:
-        # Считаем выражение прямо в SQLite, чтобы не возиться с часовыми поясами на Python-стороне
-        import aiosqlite
-        async with aiosqlite.connect(config.DB_PATH) as db:
-            async with db.execute(f"SELECT {PERIOD_TO_SQL[period]}") as cur:
-                since_sql = (await cur.fetchone())[0]
-
+    since_sql = await _period_since_sql(period)
     data = await get_revenue_stats(since_sql, config.TON_GRAM_RATE_UZS)
     data["period"] = period
     return web.json_response(data)
 
 
+def _extract_verified_user(pairs: dict) -> dict | None:
+    init_data = pairs.get("initData") if isinstance(pairs, dict) else None
+    return validate_init_data(init_data, config.BOT_TOKEN)
+
+
+async def handle_my_orders(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = _extract_verified_user(body)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    orders = await get_user_orders(user["id"])
+    return web.json_response({"orders": orders})
+
+
+async def handle_my_stats(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = _extract_verified_user(body)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    stats = await get_user_spend_stats(user["id"])
+    return web.json_response(stats)
+
+
+async def handle_leaderboard(request: web.Request) -> web.Response:
+    period = request.query.get("period", "all")
+    if period not in PERIOD_TO_SQL:
+        return web.json_response({"error": f"unknown period, expected one of {list(PERIOD_TO_SQL)}"}, status=400)
+
+    since_sql = await _period_since_sql(period)
+    rows = await get_leaderboard(since_sql, limit=20)
+    return web.json_response({"leaderboard": rows, "period": period})
+
+
+async def handle_preflight(request: web.Request) -> web.Response:
+    return web.Response(status=204)
+
+
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    if request.method == "OPTIONS":
+        response = web.Response(status=204)
+    else:
+        response = await handler(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Internal-Secret"
+    return response
+
+
 async def start_stats_server():
     """Запускается фоновой задачей рядом с polling бота (см. bot.py)."""
-    if not config.ANALYTICS_API_SECRET:
-        # Аналитику не настраивали — не поднимаем сервер вообще, не занимаем порт зря
-        return
-
-    app = web.Application()
+    app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/internal/stats", handle_stats)
+    app.router.add_post("/public/my_orders", handle_my_orders)
+    app.router.add_post("/public/my_stats", handle_my_stats)
+    app.router.add_get("/public/leaderboard", handle_leaderboard)
+    for path in ("/public/my_orders", "/public/my_stats"):
+        app.router.add_route("OPTIONS", path, handle_preflight)
 
     runner = web.AppRunner(app)
     await runner.setup()

@@ -80,3 +80,8 @@ INTERNAL_PUSH_SECRET = os.getenv("INTERNAL_PUSH_SECRET", "")
 ANALYTICS_API_SECRET = os.getenv("ANALYTICS_API_SECRET", "")
 STATS_API_PORT = int(os.getenv("STATS_API_PORT", "8081"))
 
+# Не используется в ЭТОМ сервисе напрямую (тут не webapp_server, а bot.py) —
+# оставлено для консистентности файлов между tg_shop_bot и oson-store-web,
+# у которого этот же webapp_server.py реально задеплоен как отдельный сервис.
+SHOP_API_URL = os.getenv("SHOP_API_URL", "").rstrip("/")
+

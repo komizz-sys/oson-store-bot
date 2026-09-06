@@ -4,6 +4,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 import asyncio
+import base64
+import io
+
+import httpx
 
 import config
 from database.db import get_order, set_order_status, get_stats, get_all_user_ids
@@ -26,8 +30,128 @@ class BroadcastStates(StatesGroup):
     waiting_message = State()
 
 
+class AddGiftStates(StatesGroup):
+    waiting_gift_id = State()
+    waiting_star_count = State()
+    waiting_price = State()
+    waiting_sticker = State()
+
+
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
+
+
+@router.message(Command("addgift"))
+async def add_gift_start(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(AddGiftStates.waiting_gift_id)
+    await message.answer(
+        "➕ Добавляем снятый с продажи подарок в каталог.\n\n"
+        "1) Пришли gift_id — длинное число (пример: 6046178578163303744)."
+    )
+
+
+@router.message(AddGiftStates.waiting_gift_id)
+async def add_gift_id(message: Message, state: FSMContext):
+    gift_id = message.text.strip()
+    if not gift_id.isdigit():
+        await message.answer("Нужно просто число, без пробелов и лишних символов. Попробуй ещё раз:")
+        return
+    await state.update_data(gift_id=gift_id)
+    await state.set_state(AddGiftStates.waiting_star_count)
+    await message.answer("2) Сколько звёзд этот подарок реально стоит в Telegram? (нужно, чтобы бот смог его подарить). Например: 50")
+
+
+@router.message(AddGiftStates.waiting_star_count)
+async def add_gift_stars(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("Нужно число. Например: 50")
+        return
+    await state.update_data(star_count=int(text))
+    await state.set_state(AddGiftStates.waiting_price)
+    await message.answer("3) За сколько сум продавать в магазине? Например: 15000")
+
+
+@router.message(AddGiftStates.waiting_price)
+async def add_gift_price(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("Нужно число. Например: 15000")
+        return
+    await state.update_data(price_uzs=int(text))
+    await state.set_state(AddGiftStates.waiting_sticker)
+    await message.answer(
+        "4) Теперь пришли сам стикер этого подарка (если он есть в наборе стикеров или "
+        "ты можешь его как-то отправить как обычный стикер) — я возьму из него картинку.\n\n"
+        "Если стикера под рукой нет — напиши /skip, сохраню без картинки (в магазине будет эмодзи)."
+    )
+
+
+async def _push_gift_to_web(data: dict, sticker_bytes: bytes | None, ext: str | None) -> str:
+    """Отправляет данные подарка (и картинку, если есть) на сервис oson-store-web,
+    где физически лежит статика магазина. Возвращает текст для ответа админу."""
+    if not config.WEBAPP_URL or not config.INTERNAL_PUSH_SECRET:
+        return "⚠️ Не настроен WEBAPP_URL или INTERNAL_PUSH_SECRET — не могу передать подарок на веб-сервис."
+
+    payload = {
+        "gift_id": data["gift_id"],
+        "star_count": data["star_count"],
+        "price_uzs": data["price_uzs"],
+        "sticker_emoji": "🎁",
+    }
+    if sticker_bytes:
+        payload["image_base64"] = base64.b64encode(sticker_bytes).decode()
+        payload["image_ext"] = ext
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                f"{config.WEBAPP_URL}/internal/add_gift",
+                json=payload,
+                headers={"X-Internal-Secret": config.INTERNAL_PUSH_SECRET},
+            )
+        if r.status_code != 200:
+            return f"⚠️ Веб-сервис ответил ошибкой {r.status_code}: {r.text}"
+    except httpx.RequestError as e:
+        return f"⚠️ Не удалось достучаться до веб-сервиса: {e}"
+
+    has_image = bool(sticker_bytes)
+    return f"✅ Подарок #{data['gift_id']} добавлен в каталог" + (" с картинкой!" if has_image else " (без картинки, будет эмодзи 🎁).")
+
+
+@router.message(AddGiftStates.waiting_sticker, F.sticker)
+async def add_gift_sticker(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    sticker = message.sticker
+
+    # Берём статичное превью (thumbnail) — оно почти всегда JPEG/WebP и точно
+    # откроется как обычная картинка в браузере. Сам файл стикера может быть
+    # анимацией (.tgs) или видео (.webm), которые для <img> не подходят.
+    file_id, ext = None, None
+    if sticker.thumbnail:
+        file_id, ext = sticker.thumbnail.file_id, "jpg"
+    elif not sticker.is_animated and not sticker.is_video:
+        file_id, ext = sticker.file_id, "webp"
+
+    sticker_bytes = None
+    if file_id:
+        buf = io.BytesIO()
+        await bot.download(file_id, destination=buf)
+        sticker_bytes = buf.getvalue()
+
+    reply = await _push_gift_to_web(data, sticker_bytes, ext)
+    await state.clear()
+    await message.answer(reply)
+
+
+@router.message(AddGiftStates.waiting_sticker, Command("skip"))
+async def add_gift_skip(message: Message, state: FSMContext):
+    data = await state.get_data()
+    reply = await _push_gift_to_web(data, None, None)
+    await state.clear()
+    await message.answer(reply)
 
 
 @router.message(Command("admin"))
@@ -38,7 +162,8 @@ async def admin_help(message: Message):
         "🛠 Админ-команды:\n"
         "/stats — статистика по пользователям и заказам\n"
         "/broadcast — разослать сообщение всем пользователям\n"
-        "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n\n"
+        "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
+        "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n\n"
         "Подтверждение/отклонение оплаты — кнопками под чеком."
     )
 
