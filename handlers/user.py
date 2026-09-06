@@ -52,6 +52,13 @@ async def cmd_myid(message: Message):
     await message.answer(f"🆔 Твой Telegram ID: <code>{message.from_user.id}</code>")
 
 
+@router.message(Command("ping"))
+async def cmd_ping(message: Message):
+    """Диагностическая команда — если бот не отвечает на неё, значит на Railway
+    запущена не та версия кода, которая сейчас в GitHub/зип-архиве."""
+    await message.answer("pong ✅ (deploy check v1)")
+
+
 @router.callback_query(F.data == "check_sub")
 async def check_sub_cb(call: CallbackQuery):
     if not await is_subscribed(call.bot, call.from_user.id):
