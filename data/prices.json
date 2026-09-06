@@ -25,9 +25,9 @@
   ],
   "premium": [
     {"label": "1 месяц", "price_uzs": 49000},
-    {"label": "3 месяца", "price_uzs": 139000},
-    {"label": "6 месяцев", "price_uzs": 239000},
-    {"label": "12 месяцев (akkauntga kirib)", "price_uzs": 399000},
+    {"label": "3 месяца", "price_uzs": 185000},
+    {"label": "6 месяцев", "price_uzs": 240000},
+    {"label": "12 месяцев (akkauntga kirib)", "price_uzs": 315000},
     {"label": "12 месяцев (akkauntga kirmasdan)", "price_uzs": 399000}
   ]
 }
