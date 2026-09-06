@@ -54,6 +54,11 @@ RENT_MIN_DISPLAY_UZS = int(os.getenv("RENT_MIN_DISPLAY_UZS", "300"))
 # Цена = кол-во звёзд подарка * этот коэффициент (сум за 1 звезду, с наценкой 20%)
 STAR_UNIT_PRICE_UZS = float(os.getenv("STAR_UNIT_PRICE_UZS", "213.3"))
 
+# Подарки, снятые Telegram с продажи (см. data/extra_gifts.json), продаются по
+# отдельной фиксированной цене, а не по текущему курсу за звезду — если в
+# extra_gifts.json для конкретного подарка не указан свой price_uzs, берём это.
+EXTRA_GIFT_LEGACY_PRICE_UZS = int(os.getenv("EXTRA_GIFT_LEGACY_PRICE_UZS", "13000"))
+
 # ---- Мини-апп ----
 # URL веб-версии магазина (адрес второго сервиса на Railway, после деплоя webapp_server.py)
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")

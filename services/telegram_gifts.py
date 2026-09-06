@@ -52,8 +52,11 @@ def _load_extra_gifts() -> list[dict]:
             "id": str(it["id"]),
             "star_count": star_count,
             # Явно заданная цена (price_uzs) в приоритете — так можно продавать
-            # снятые с продажи подарки по своей фиксированной цене.
-            "price_uzs": int(it["price_uzs"]) if it.get("price_uzs") else gift_price_uzs(star_count),
+            # снятые с продажи подарки по своей фиксированной цене. Если цену не
+            # указали вручную — не считаем по курсу звезды (это же не обычный
+            # подарок из магазина Telegram), а берём фиксированную "цену за
+            # снятый с продажи подарок" из конфига.
+            "price_uzs": int(it["price_uzs"]) if it.get("price_uzs") else config.EXTRA_GIFT_LEGACY_PRICE_UZS,
             "sticker_emoji": it.get("sticker_emoji", "🎁"),
             "image_url": it.get("image_url"),
         })

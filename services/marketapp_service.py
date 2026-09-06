@@ -168,27 +168,24 @@ async def get_rent_collections() -> list[dict]:
     except Exception:
         return []
 
-    # Логотип коллекции = картинка РЕАЛЬНО существующего сейчас в аренде лота
-    # этой коллекции (нельзя просто угадать номер вроде "#1" — такого экземпляра
-    # может не быть, тогда nft.fragment.com отдаст 404 и логотип не покажется).
-    async def fetch_one_logo(collection: dict) -> str | None:
-        try:
-            data = await marketapp_api.get_gifts_for_rent(
-                sort_by="recently_touch", collection_address=collection["address"]
-            )
-        except Exception:
-            return None
-        items = data.get("items", [])
-        if not items:
-            return None
-        async with httpx.AsyncClient() as client:
-            return await _fetch_gift_image(client, items[0]["nft_name"])
-
-    images = await asyncio.gather(*[fetch_one_logo(c) for c in raw])
-
+    # БАГ БЫЛ ЗДЕСЬ: раньше логотип коллекции брался из картинки конкретного
+    # экземпляра, который сейчас реально в аренде (через отдельный запрос к
+    # MarketApp + nft.fragment.com/gift/{slug}-{number}.json). Если у коллекции
+    # прямо сейчас нет лотов в аренде, или конкретный экземпляр не резолвился —
+    # логотип пропадал, и вместо иконки показывался пустой серый квадрат
+    # (это видно на скриншоте: иконка есть только у пары коллекций из полусотни).
+    #
+    # У fragment.com есть отдельная, не привязанная к конкретному экземпляру,
+    # обложка САМОЙ коллекции (тот же паттерн, что и на marketapp.org):
+    # https://fragment.com/file/gifts/{slug}/thumb.webp — не нужно ходить за
+    # лотами и знать номер, работает для абсолютно любой коллекции сразу.
     _collections_cache = [
-        {"name": c["name"], "address": c["address"], "image": image}
-        for c, image in zip(raw, images)
+        {
+            "name": c["name"],
+            "address": c["address"],
+            "image": f"https://fragment.com/file/gifts/{_slugify(c['name'])}/thumb.webp",
+        }
+        for c in raw
     ]
     return _collections_cache
 

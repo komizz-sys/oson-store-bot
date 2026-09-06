@@ -44,8 +44,15 @@ def _load_extra_gifts() -> list[dict]:
         result.append({
             "id": str(it["id"]),
             "star_count": star_count,
-            "price_uzs": round(star_count * config.STAR_UNIT_PRICE_UZS),
+            # БАГ БЫЛ ЗДЕСЬ: раньше price_uzs всегда пересчитывался по курсу звезды
+            # и вручную заданная цена из extra_gifts.json полностью игнорировалась.
+            # Теперь явно заданная цена в приоритете, а если её нет — фиксированная
+            # цена "снятого с продажи" подарка (не курс звезды).
+            "price_uzs": int(it["price_uzs"]) if it.get("price_uzs") else config.EXTRA_GIFT_LEGACY_PRICE_UZS,
             "sticker_emoji": it.get("sticker_emoji", "🎁"),
+            # БАГ БЫЛ ЗДЕСЬ: image_url вообще не прокидывался в ответ API, поэтому
+            # даже загруженная через /addgift картинка никогда не доходила до фронта.
+            "image_url": it.get("image_url"),
         })
     return result
 

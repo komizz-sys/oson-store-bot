@@ -204,8 +204,16 @@ async function renderItems() {
     : "";
 
   grid.innerHTML = items.map(function(it, i) {
+    // БАГ БЫЛ ЗДЕСЬ: карточка в сетке всегда рисовала только эмодзи (it.emoji),
+    // even когда у товара есть реальное фото (it.image) — картинку показывала
+    // только модалка после тапа. Из-за этого добавленные через /addgift фото
+    // подарков не появлялись там, где их реально видит покупатель — в каталоге.
+    const iconHTML = it.image
+      ? '<img src="' + it.image + '" loading="lazy" class="w-14 h-14 my-1 rounded-xl object-cover animated-gift" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'block\';" />' +
+        '<div class="text-3xl my-2 animated-gift" style="display:none">' + it.emoji + '</div>'
+      : '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>';
     return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10 hover:border-white/20 shadow-lg shadow-black/20">' +
-      '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>' +
+      iconHTML +
       '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
       '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
     '</div>';

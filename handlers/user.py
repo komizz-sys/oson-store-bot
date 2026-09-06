@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 
 from database.db import upsert_user, get_user_orders, get_user_language, set_user_language
@@ -44,6 +44,12 @@ async def cmd_start(message: Message):
         return
 
     await _show_main_menu(message, message.from_user.id)
+
+
+@router.message(Command("myid"))
+async def cmd_myid(message: Message):
+    """Показывает числовой Telegram ID — удобно, чтобы сверить с ADMIN_IDS на Railway."""
+    await message.answer(f"🆔 Твой Telegram ID: <code>{message.from_user.id}</code>")
 
 
 @router.callback_query(F.data == "check_sub")
