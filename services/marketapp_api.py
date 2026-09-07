@@ -13,6 +13,16 @@ import config
 BASE_URL = "https://api.marketapp.org"
 
 
+class MarketAppError(Exception):
+    """Ошибка ответа api.marketapp.org — хранит и код, и тело ответа (там
+    обычно есть человекочитаемая причина, которую нельзя терять)."""
+
+    def __init__(self, status_code: int, detail):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(f"{status_code}: {detail}")
+
+
 def _headers() -> dict:
     return {"Authorization": config.MARKETAPP_API_KEY}
 
@@ -20,14 +30,28 @@ def _headers() -> dict:
 async def _post(path: str, json: dict | None = None) -> dict:
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=20) as client:
         r = await client.post(path, headers=_headers(), json=json or {})
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # БАГ БЫЛ ЗДЕСЬ: raise_for_status() показывал только код (400 Bad
+            # Request) без текста ответа — а marketapp.org почти всегда кладёт
+            # в тело реальную причину (неверный username, лимиты, баланс и
+            # т.п.). Без неё чинить проблему приходится вслепую.
+            try:
+                detail = r.json()
+            except ValueError:
+                detail = r.text
+            raise MarketAppError(r.status_code, detail)
         return r.json()
 
 
 async def _get(path: str, params: dict | None = None) -> dict:
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=20) as client:
         r = await client.get(path, headers=_headers(), params=params or {})
-        r.raise_for_status()
+        if r.status_code >= 400:
+            try:
+                detail = r.json()
+            except ValueError:
+                detail = r.text
+            raise MarketAppError(r.status_code, detail)
         return r.json()
 
 
@@ -99,3 +123,4 @@ async def rent_pay(nft_address: str, duration_seconds: int, price_per_day_gram: 
         f"/v1/rent/{nft_address}/pay/",
         {"duration": duration_seconds, "price_per_day": price_per_day_gram},
     )
+```[cite: 2]
