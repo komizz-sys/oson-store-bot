@@ -8,7 +8,7 @@ from handlers.states import OrderStates
 from keyboards.user_kb import confirm_order_kb
 from services.prices import format_uzs
 from services.i18n import t
-from database.db import get_user_language
+from database.db import get_user_language, upsert_user
 
 router = Router()
 
@@ -23,6 +23,13 @@ CATEGORY_CONTENT = {
 
 @router.message(F.web_app_data)
 async def handle_web_app_data(message: Message, state: FSMContext):
+    # БАГ БЫЛ ЗДЕСЬ: имя/username сохранялись в БД только по команде /start.
+    # Если человек открывал мини-апп и сразу оформлял заказ, ни разу не
+    # написав боту /start, его записи в users не появлялось — из-за этого он
+    # попадал в рейтинг (TOP) голым ID без имени. Теперь сохраняем на каждый
+    # заказ, а не только на /start.
+    await upsert_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name)
+
     try:
         payload = json.loads(message.web_app_data.data)
     except Exception:
