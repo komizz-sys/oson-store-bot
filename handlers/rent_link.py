@@ -20,20 +20,22 @@ from database.db import get_pending_rent_link_order, set_rent_link
 
 router = Router()
 
-# Принимаем и полный URL (https://...), и голый t.me/... без схемы — Fragment
-# может выдать ссылку в любом из этих видов.
-_LINK_RE = re.compile(r"^(https?://\S+|t\.me/\S+)$", re.IGNORECASE)
+# Реальная ссылка, которую Fragment выдаёт для подключения арендованного
+# гифта, — это TonConnect-ссылка вида "tc://?v=2&id=...&r=..." (у каждого
+# клиента своя, но префикс всегда tc://). На всякий случай также принимаем
+# обычные https:// и t.me/ — вдруг Fragment когда-нибудь поменяет формат.
+_LINK_RE = re.compile(r"^(tc://\S+|https?://\S+|t\.me/\S+)$", re.IGNORECASE)
 
 
 @router.message(F.text)
 async def receive_rent_link(message: Message, bot: Bot):
     link = (message.text or "").strip()
     if not _LINK_RE.match(link):
-        raise SkipHandler  # не похоже на ссылку — не наш случай
+        raise SkipHandler  # не похоже на ссылку — не наш случай[cite: 6]
 
     order = await get_pending_rent_link_order(message.from_user.id)
     if not order:
-        raise SkipHandler  # не наш случай — пусть сообщение обработает другой хендлер
+        raise SkipHandler  # не наш случай — пусть сообщение обработает другой хендлер[cite: 6]
 
     await set_rent_link(order["id"], link)
     await message.answer(
@@ -52,4 +54,4 @@ async def receive_rent_link(message: Message, bot: Bot):
                 disable_web_page_preview=True,
             )
         except Exception:
-            pass
+            pass  #[cite: 6]
