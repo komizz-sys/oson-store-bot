@@ -123,4 +123,3 @@ async def rent_pay(nft_address: str, duration_seconds: int, price_per_day_gram: 
         f"/v1/rent/{nft_address}/pay/",
         {"duration": duration_seconds, "price_per_day": price_per_day_gram},
     )
-```[cite: 2]
