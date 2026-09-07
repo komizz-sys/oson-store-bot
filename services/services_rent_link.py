@@ -16,10 +16,10 @@ import config
 RENT_LINK_PROMPT = (
     "🎥 Ijaraga olgan giftingizni qanday olish mumkin:\n\n"
     "Yuqoridagi videoni ko‘ring — unda Telegram’da giftingizni ulash uchun "
-    "shaxsiy havolangizni qanday olish ko‘rsatilgan.\n\n"
+    "shaxsiy havolangizni qanday olish ko‘rsatilgan[cite: 5].\n\n"
     "Shundan so‘ng, havolani aynan shu chatga yuboring. Men giftingizni ulab "
     "berganimdan so‘ng, darhol sizga xabar beraman. Va siz videodagidak "
-    "profilingizga chiqarib olasiz!"
+    "profilingizga chiqarib olasiz[cite: 5]!"
 )
 
 
@@ -33,6 +33,6 @@ async def send_rent_link_tutorial(bot: Bot, order: dict) -> None:
             )
             return
         except Exception:
-            pass  # file_id мог устареть/быть неверным — не молчим, шлём хотя бы текст
+            pass  # file_id мог устареть/быть неверным — не молчим, шлём хотя бы текст[cite: 5]
 
     await bot.send_message(order["user_id"], RENT_LINK_PROMPT)
