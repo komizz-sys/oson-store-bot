@@ -261,9 +261,9 @@ async function renderItems() {
       : '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>';
     const isPopularStars = currentCategory === "stars" && it.raw && it.raw.amount === 1000;
     const popularBadge = isPopularStars
-      ? '<span class="absolute top-1.5 right-1.5 pill-gold text-[8px] font-bold px-1.5 py-0.5 rounded-md leading-none">' + t("badge_popular") + '</span>'
+      ? '<span class="badge-popular absolute top-1.5 right-1.5 pill-gold text-[8px] font-bold px-1.5 py-0.5 rounded-md leading-none">' + t("badge_popular") + '</span>'
       : "";
-    return '<div data-i="' + i + '" class="product-card glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer relative">' +
+    return '<div data-i="' + i + '" class="product-card glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer relative' + (isPopularStars ? " card-popular" : "") + '">' +
       popularBadge +
       iconHTML +
       '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
@@ -496,10 +496,10 @@ async function renderPremiumList() {
       const isPopular = !popularMarked && maxDuration > 0 && durationOf(it.title) === maxDuration;
       if (isPopular) popularMarked = true;
       const popularBadge = isPopular
-        ? '<span class="absolute -top-2 right-3 pill-gold text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">' + t("badge_popular") + '</span>'
+        ? '<span class="badge-popular absolute -top-2 right-3 pill-gold text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">' + t("badge_popular") + '</span>'
         : "";
       return '<div data-i="' + i + '" class="premium-option press flex items-center justify-between gap-3 rounded-2xl p-4 cursor-pointer border relative ' +
-        (selected ? "bg-neon-blue/10 border-neon-blue/50" : "bg-white/[0.04] border-white/[0.08]") + '">' +
+        (selected ? "bg-neon-blue/10 border-neon-blue/50" : (isPopular ? "bg-white/[0.04] card-popular" : "bg-white/[0.04] border-white/[0.08]")) + '">' +
         popularBadge +
         '<div class="flex items-center gap-3">' +
           '<span class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ' + (selected ? "border-neon-blue" : "border-gray-500") + '">' +
@@ -1009,22 +1009,33 @@ function setTopPeriod(period) {
 }
 
 /** Небольшой салют вокруг короны 1-го места в рейтинге — чисто декоративно. */
+/**
+ * Салют с двух сторон подиума — летит от левого и правого края навстречу
+ * центру (как на награждении), а не просто разлетается вокруг короны.
+ */
 function launchConfetti() {
-  const box = document.getElementById("podium-confetti");
-  if (!box) return;
   const colors = ["#D9B45B", "#2AABEE", "#8E8CD8", "#5AC8FA", "#F0DFA0"];
-  let html = "";
-  for (let i = 0; i < 16; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 34 + Math.random() * 30;
-    const tx = Math.round(Math.cos(angle) * dist);
-    const ty = Math.round(Math.sin(angle) * dist - 10);
-    const rot = Math.round((Math.random() - 0.5) * 480);
-    const color = colors[i % colors.length];
-    const delay = Math.round(Math.random() * 120);
-    html += '<span class="confetti-piece" style="--tx:' + tx + 'px; --ty:' + ty + 'px; --rot:' + rot + 'deg; background:' + color + '; animation-delay:' + delay + 'ms;"></span>';
+
+  function burst(boxId, dirX) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    let html = "";
+    for (let i = 0; i < 14; i++) {
+      // dirX задаёт общее направление (влево/вправо), с разбросом по вертикали
+      const spread = (Math.random() - 0.5) * 70;
+      const dist = 60 + Math.random() * 50;
+      const tx = Math.round(dirX * dist);
+      const ty = Math.round(spread - 30 - Math.random() * 20);
+      const rot = Math.round((Math.random() - 0.5) * 520);
+      const color = colors[i % colors.length];
+      const delay = Math.round(Math.random() * 140);
+      html += '<span class="confetti-piece" style="--tx:' + tx + 'px; --ty:' + ty + 'px; --rot:' + rot + 'deg; background:' + color + '; animation-delay:' + delay + 'ms;"></span>';
+    }
+    box.innerHTML = html;
   }
-  box.innerHTML = html;
+
+  burst("podium-confetti-left", 1);   // летит вправо, к центру
+  burst("podium-confetti-right", -1); // летит влево, к центру
 }
 
 async function renderLeaderboard(period) {
@@ -1076,28 +1087,38 @@ async function renderLeaderboard(period) {
         0: "ring-2 ring-neon-yellow", 1: "ring-2 ring-gray-300/70", 2: "ring-2 ring-amber-700/60",
       };
       const GLOW = { 0: "0 0 26px -2px rgba(217,180,91,0.65)", 1: "0 0 16px -4px rgba(200,205,212,0.4)", 2: "0 0 16px -4px rgba(181,113,58,0.4)" };
-      const LIFT = { 0: "-mt-5", 1: "mt-3", 2: "mt-5" };
-      const SIZE = { 0: "w-[72px] h-[72px] text-2xl", 1: "w-14 h-14 text-lg", 2: "w-14 h-14 text-lg" };
-      const rankBadge = { 0: "🥇", 1: "🥈", 2: "🥉" };
+      const SIZE = { 0: "w-[72px] h-[72px] text-2xl -mt-9", 1: "w-14 h-14 text-lg -mt-7", 2: "w-14 h-14 text-lg -mt-7" };
+      // Настоящие блоки пьедестала — разной высоты (1 место выше всех),
+      // с крупным номером, как на олимпийском подиуме.
+      const BLOCK_H = { 0: "h-24", 1: "h-16", 2: "h-12" };
+      const BLOCK_BG = {
+        0: "background: linear-gradient(180deg, #F3D98A 0%, #C99A3E 100%);",
+        1: "background: linear-gradient(180deg, #E3E7EC 0%, #9AA3AD 100%);",
+        2: "background: linear-gradient(180deg, #E3A567 0%, #A9713C 100%);",
+      };
+      const BLOCK_NUM_COLOR = { 0: "#6b4e11", 1: "#4a5058", 2: "#5c3a17" };
       podiumHtml =
-        '<div class="flex items-end justify-center gap-4 pt-1 pb-6 overlay-enter">' +
-        order.map(function(i, idx) {
-          const r = rows[i];
-          const name = personName(r);
-          const isMe = myId && r.user_id === myId;
-          return '<div class="flex flex-col items-center ' + LIFT[i] + '" style="animation: sheetUp .4s cubic-bezier(.2,.9,.25,1) both; animation-delay:' + (idx * 70) + 'ms;">' +
-            (i === 0 ? '<div class="relative">' +
-              '<div id="podium-confetti" class="absolute inset-0"></div>' +
-              '<div class="text-2xl mb-1 relative" style="animation: float 2.4s ease-in-out infinite;">👑</div>' +
-            '</div>' : '<div class="h-8"></div>') +
-            '<div class="relative">' +
-              '<div class="' + SIZE[i] + ' rounded-full ' + RING[i] + ' flex items-center justify-center font-bold text-white' + (isMe ? " outline outline-2 outline-neon-blue outline-offset-2" : "") + '" style="' + AVATAR_BG[i] + ' box-shadow:' + GLOW[i] + ';">' + initials(name) + '</div>' +
-              '<span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 text-base leading-none">' + rankBadge[i] + '</span>' +
-            '</div>' +
-            '<div class="text-[11.5px] font-semibold text-white mt-2.5 max-w-[84px] truncate text-center">' + name + '</div>' +
-            '<div class="text-[11px] font-bold text-neon-yellow">' + fmtUZS(r.total_uzs) + '</div>' +
-          '</div>';
-        }).join("") +
+        '<div class="relative overlay-enter">' +
+          '<div id="podium-confetti-left" class="absolute left-2 top-8 w-0 h-0"></div>' +
+          '<div id="podium-confetti-right" class="absolute right-2 top-8 w-0 h-0"></div>' +
+          '<div class="flex items-end justify-center gap-2.5 pt-1 pb-2">' +
+          order.map(function(i, idx) {
+            const r = rows[i];
+            const name = personName(r);
+            const isMe = myId && r.user_id === myId;
+            return '<div class="flex flex-col items-center w-[92px]" style="animation: sheetUp .4s cubic-bezier(.2,.9,.25,1) both; animation-delay:' + (idx * 70) + 'ms;">' +
+              (i === 0 ? '<div class="text-2xl mb-1" style="animation: float 2.4s ease-in-out infinite;">👑</div>' : '<div class="h-8"></div>') +
+              '<div class="relative z-10">' +
+                '<div class="' + SIZE[i] + ' rounded-full ' + RING[i] + ' flex items-center justify-center font-bold text-white' + (isMe ? " outline outline-2 outline-neon-blue outline-offset-2" : "") + '" style="' + AVATAR_BG[i] + ' box-shadow:' + GLOW[i] + ';">' + initials(name) + '</div>' +
+              '</div>' +
+              '<div class="text-[11.5px] font-semibold text-white mt-2 max-w-[90px] truncate text-center px-1">' + name + '</div>' +
+              '<div class="text-[11px] font-bold text-neon-yellow mb-2">' + fmtUZS(r.total_uzs) + '</div>' +
+              '<div class="w-full ' + BLOCK_H[i] + ' rounded-t-xl flex items-start justify-center pt-1.5 shadow-[0_-2px_10px_rgba(0,0,0,0.25)]" style="' + BLOCK_BG[i] + '">' +
+                '<span class="text-2xl font-black" style="color:' + BLOCK_NUM_COLOR[i] + '">' + (i + 1) + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join("") +
+          '</div>' +
         '</div>';
     }
 

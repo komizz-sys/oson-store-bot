@@ -148,6 +148,19 @@
       box-shadow: 0 10px 26px -10px rgba(42,171,238,0.55);
     }
 
+    /* Бейдж "Mashhur/Популярный" — заметная пульсация, чтобы глаз сразу цеплялся */
+    @keyframes popularGlow {
+      0%, 100% { box-shadow: 0 0 0px 0px rgba(217,180,91,0.55), 0 4px 14px -4px rgba(217,180,91,0.6); }
+      50% { box-shadow: 0 0 0px 5px rgba(217,180,91,0), 0 4px 18px -2px rgba(217,180,91,0.85); }
+    }
+    .badge-popular {
+      animation: popularGlow 1.8s ease-in-out infinite;
+    }
+    .card-popular {
+      border-color: rgba(217,180,91,0.55) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(217,180,91,0.25), 0 14px 34px -18px rgba(0,0,0,0.65);
+    }
+
     .safe-bottom-pad { padding-bottom: calc(6.5rem + var(--safe-bottom)); }
   </style>
 </head>
