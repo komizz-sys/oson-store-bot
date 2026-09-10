@@ -108,3 +108,8 @@ STATS_API_PORT = int(os.getenv("STATS_API_PORT", "8081"))
 # у которого этот же webapp_server.py реально задеплоен как отдельный сервис.
 SHOP_API_URL = os.getenv("SHOP_API_URL", "").rstrip("/")
 
+# Тоже не используется напрямую в этом сервисе (см. комментарий выше) —
+# путь на persistent Volume, где oson-store-web хранит картинки подарков
+# и extra_gifts.json (обычный диск Railway не переживает передеплой).
+PERSIST_DIR = os.getenv("PERSIST_DIR", os.path.join(os.path.dirname(__file__), "data", "persist"))
+

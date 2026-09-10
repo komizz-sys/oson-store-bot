@@ -7,6 +7,7 @@
 
 import json
 import os
+import shutil
 import time
 
 import httpx
@@ -18,7 +19,30 @@ import config
 from services.prices import get_stars_packages, get_premium_packages
 from services.marketapp_service import get_available_gifts, get_rent_collections
 
-EXTRA_GIFTS_PATH = os.path.join(os.path.dirname(__file__), "data", "extra_gifts.json")
+# ВАЖНО: диск контейнера на Railway НЕ переживает передеплой — при каждом
+# новом деплое сервис поднимается заново из git-репозитория, и любые файлы,
+# записанные в рантайме внутрь папки проекта (как раньше было с
+# webapp/gift_images и data/extra_gifts.json), просто исчезают. Поэтому и
+# картинки добавленных через /addgift подарков, и сам файл с ними должны
+# жить на подключённом персистентном Volume (config.PERSIST_DIR — путь его
+# монтирования), а не внутри репозитория.
+EXTRA_GIFTS_PATH = os.path.join(config.PERSIST_DIR, "extra_gifts.json")
+GIFT_IMAGES_DIR = os.path.join(config.PERSIST_DIR, "gift_images")
+
+# Если это первый запуск с volume (файла там ещё нет) — переносим то, что
+# было закоммичено в репозитории раньше, чтобы не потерять уже добавленные
+# вручную 11 подарков из старой data/extra_gifts.json.
+_REPO_EXTRA_GIFTS_SEED = os.path.join(os.path.dirname(__file__), "data", "extra_gifts.json")
+
+
+def _ensure_persist_seeded():
+    os.makedirs(config.PERSIST_DIR, exist_ok=True)
+    os.makedirs(GIFT_IMAGES_DIR, exist_ok=True)
+    if not os.path.exists(EXTRA_GIFTS_PATH) and os.path.exists(_REPO_EXTRA_GIFTS_SEED):
+        shutil.copyfile(_REPO_EXTRA_GIFTS_SEED, EXTRA_GIFTS_PATH)
+
+
+_ensure_persist_seeded()
 
 
 def _load_extra_gifts() -> list[dict]:
@@ -139,9 +163,8 @@ async def internal_add_gift(request: Request):
     if body.get("image_base64"):
         import base64
         ext = body.get("image_ext", "jpg")
-        save_dir = os.path.join(os.path.dirname(__file__), "webapp", "gift_images")
-        os.makedirs(save_dir, exist_ok=True)
-        with open(os.path.join(save_dir, f"{gift_id}.{ext}"), "wb") as f:
+        os.makedirs(GIFT_IMAGES_DIR, exist_ok=True)
+        with open(os.path.join(GIFT_IMAGES_DIR, f"{gift_id}.{ext}"), "wb") as f:
             f.write(base64.b64decode(body["image_base64"]))
         image_url = f"/gift_images/{gift_id}.{ext}"
 
@@ -270,6 +293,11 @@ async def api_config():
     вместо ошибки (SHOP_API_URL ещё не настроен)."""
     return {"shop_api_url": config.SHOP_API_URL}
 
+
+# /gift_images — картинки подарков, добавленных через /addgift, лежат на
+# persist-volume вне папки webapp/, поэтому монтируем отдельно и раньше,
+# чем общую статику мини-аппа.
+app.mount("/gift_images", StaticFiles(directory=GIFT_IMAGES_DIR), name="gift_images")
 
 # Статика мини-аппа — подключаем последней, чтобы не перекрывать /api/*
 app.mount("/", StaticFiles(directory="webapp", html=True), name="webapp")

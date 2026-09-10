@@ -61,18 +61,22 @@ async def main():
 
     await bot.delete_webhook(drop_pending_updates=True)
 
-    # Сбрасываем старый Menu Button, если он был установлен раньше — иначе
-    # он остаётся висеть в Telegram даже после удаления кода, который его
-    # ставил, и создаёт путаницу с новой кнопкой-клавиатурой магазина.
-    from aiogram.types import MenuButtonDefault
+    # Раньше сбрасывали Menu Button на дефолт, потому что через неё не
+    # работал sendData() — заказ мог "потеряться". Теперь заказ идёт через
+    # защищённый API (/public/create_order, та же подпись initData, что и у
+    # Tarix/TOP/Profil), а не через sendData(), так что Menu Button можно
+    # спокойно включать — компактная кнопка "Открыть" у поля ввода.
+    from aiogram.types import MenuButtonWebApp, WebAppInfo
     try:
-        await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text="Открыть", web_app=WebAppInfo(url=config.WEBAPP_URL))
+        )
     except Exception:
         pass
 
     # Внутренний API для бота-аналитика (доход/расход/прибыль) — если не
     # настроен через ANALYTICS_API_SECRET, просто ничего не делает
-    await start_stats_server()
+    await start_stats_server(bot, dp.storage)
 
     if config.UNIQUE_AMOUNT_ENABLED:
         asyncio.create_task(_expire_stale_orders_loop(bot))

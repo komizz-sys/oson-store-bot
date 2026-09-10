@@ -1,6 +1,53 @@
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) { tg.expand(); tg.ready(); }
 
+/**
+ * Telegram иногда отдаёт initData не мгновенно на первом кадре WebView —
+ * страница уже выполнилась, а initData ещё пустая строка (особенно на
+ * некоторых версиях клиента при "холодном" открытии мини-аппа). Раньше из-за
+ * этого Tarix/Profil мгновенно показывали "открой в Telegram", хотя человек
+ * и так был внутри Telegram. Ждём короткими попытками, прежде чем сдаться.
+ */
+/**
+ * Telegram иногда отдаёт initData не мгновенно на первом кадре WebView —
+ * страница уже выполнилась, а initData ещё пустая строка. На слабых
+ * Android-устройствах (видел в логах — Redmi Note 9S "AVERAGE" performance)
+ * это может занимать заметно больше 1.5 сек, особенно на медленном интернете.
+ * БАГ БЫЛ ЗДЕСЬ: ждали всего 1.5 сек и сдавались — Tarix/Profil показывали
+ * "открой в Telegram", хотя человек и так был внутри Telegram, просто
+ * initData ещё не успела дойти. Увеличил окно ожидания и сделал его терпеливее.
+ */
+function waitForInitData(maxWaitMs = 4000, stepMs = 150) {
+  return new Promise(function(resolve) {
+    if (tg && tg.initData) { resolve(tg.initData); return; }
+    let waited = 0;
+    const iv = setInterval(function() {
+      waited += stepMs;
+      if (tg && tg.initData) { clearInterval(iv); resolve(tg.initData); }
+      else if (waited >= maxWaitMs) { clearInterval(iv); resolve(tg && tg.initData ? tg.initData : ""); }
+    }, stepMs);
+  });
+}
+
+/**
+ * Отдельное (и обычно куда более быстрое) ожидание именно initDataUnsafe.user —
+ * это НЕподписанные данные, для отображения имени/аватарки в Profil подпись
+ * не нужна, поэтому не блокируем это той же долгой проверкой, что my_orders/my_stats.
+ */
+function waitForUnsafeUser(maxWaitMs = 4000, stepMs = 150) {
+  return new Promise(function(resolve) {
+    const get = function() { return tg && tg.initDataUnsafe && tg.initDataUnsafe.user; };
+    if (get()) { resolve(get()); return; }
+    let waited = 0;
+    const iv = setInterval(function() {
+      waited += stepMs;
+      const u = get();
+      if (u) { clearInterval(iv); resolve(u); }
+      else if (waited >= maxWaitMs) { clearInterval(iv); resolve(null); }
+    }, stepMs);
+  });
+}
+
 /* ---------------- i18n ---------------- */
 const I18N = {
   uz: {
@@ -28,7 +75,7 @@ const I18N = {
     status_fulfilling: "Bajarilmoqda", status_completed: "Bajarildi", status_rejected: "Bekor qilindi",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Sovg'a", cat_nft_rent: "\ud83d\uddbc Ijara",
     top_period_today: "Bugun", top_period_week: "Hafta", top_period_month: "Oy", top_period_all: "Hammasi",
-    top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.",
+    top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.", badge_popular: "Mashhur",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
   },
@@ -57,7 +104,7 @@ const I18N = {
     status_fulfilling: "Выполняется", status_completed: "Выполнено", status_rejected: "Отменено",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Подарок", cat_nft_rent: "\ud83d\uddbc Аренда",
     top_period_today: "Сегодня", top_period_week: "Неделя", top_period_month: "Месяц", top_period_all: "Всё время",
-    top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.",
+    top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.", badge_popular: "Популярный",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
   },
@@ -86,7 +133,7 @@ const I18N = {
     status_fulfilling: "In progress", status_completed: "Completed", status_rejected: "Cancelled",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Gift", cat_nft_rent: "\ud83d\uddbc Rent",
     top_period_today: "Today", top_period_week: "Week", top_period_month: "Month", top_period_all: "All time",
-    top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.",
+    top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.", badge_popular: "Popular",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
   },
@@ -196,10 +243,10 @@ async function renderItems() {
   if (!items.length) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
   const customCardHTML = currentCategory === "stars"
-    ? '<div id="stars-custom-card" class="bg-white/5 backdrop-blur-md border border-dashed border-white/20 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10">' +
+    ? '<div id="stars-custom-card" class="glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer" style="border-style: dashed;">' +
         '<div class="text-3xl my-2">✏️</div>' +
         '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + t("custom_amount") + '</div>' +
-        '<div class="text-[10px] font-bold text-gray-400">' + t("custom_amount_hint") + '</div>' +
+        '<div class="text-[10px] font-bold text-gray-500">' + t("custom_amount_hint") + '</div>' +
       '</div>'
     : "";
 
@@ -209,10 +256,15 @@ async function renderItems() {
     // только модалка после тапа. Из-за этого добавленные через /addgift фото
     // подарков не появлялись там, где их реально видит покупатель — в каталоге.
     const iconHTML = it.image
-      ? '<img src="' + it.image + '" loading="lazy" class="w-14 h-14 my-1 rounded-xl object-cover animated-gift" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'block\';" />' +
+      ? '<img src="' + it.image + '" loading="lazy" class="w-14 h-14 my-1 rounded-2xl object-cover animated-gift" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'block\';" />' +
         '<div class="text-3xl my-2 animated-gift" style="display:none">' + it.emoji + '</div>'
       : '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>';
-    return '<div data-i="' + i + '" class="product-card bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all hover:bg-white/10 hover:border-white/20 shadow-lg shadow-black/20">' +
+    const isPopularStars = currentCategory === "stars" && it.raw && it.raw.amount === 1000;
+    const popularBadge = isPopularStars
+      ? '<span class="absolute top-1.5 right-1.5 pill-gold text-[8px] font-bold px-1.5 py-0.5 rounded-md leading-none">' + t("badge_popular") + '</span>'
+      : "";
+    return '<div data-i="' + i + '" class="product-card glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer relative">' +
+      popularBadge +
       iconHTML +
       '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
       '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
@@ -248,11 +300,11 @@ function rentCardHTML(it, i) {
     ? '<span class="text-[11px] text-gray-500 font-mono">#' + it.raw.number + '</span>'
     : '';
 
-  return '<div data-i="' + i + '" class="rent-card bg-[#0d1424] border border-white/10 rounded-2xl overflow-hidden flex flex-col cursor-pointer active:scale-[0.98] transition-all hover:border-white/20 shadow-lg shadow-black/20">' +
+  return '<div data-i="' + i + '" class="rent-card glass-card press rounded-[22px] overflow-hidden flex flex-col cursor-pointer">' +
     '<div class="rent-img relative h-44">' +
       imgBlock +
       discountBadge +
-      '<span class="absolute bottom-2 right-2 bg-black/60 backdrop-blur text-[10px] font-semibold px-2 py-1 rounded-lg text-gray-200">' +
+      '<span class="absolute bottom-2 right-2 bg-black/50 backdrop-blur-md text-[10px] font-semibold px-2 py-1 rounded-lg text-gray-200 border border-white/10">' +
         t("rent_from") + ' ' + it.raw.min_duration_days + '-' + it.raw.max_duration_days + ' ' + t("rent_days_suffix") +
       '</span>' +
     '</div>' +
@@ -262,7 +314,7 @@ function rentCardHTML(it, i) {
         numberBadge +
       '</div>' +
       '<div class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + ' <span class="text-[11px] text-gray-400 font-normal">· 1 ' + t("rent_days_suffix") + '</span></div>' +
-      '<button data-i="' + i + '" class="rent-btn mt-2 w-full py-2.5 rounded-xl bg-gradient-to-r from-neon-blue to-blue-600 font-bold text-white text-sm active:scale-95 transition-all shadow-[0_4px_14px_rgba(59,130,246,0.35)]">' + t("rent_btn") + '</button>' +
+      '<button data-i="' + i + '" class="rent-btn press mt-2 w-full py-3 rounded-2xl btn-primary font-semibold text-white text-sm">' + t("rent_btn") + '</button>' +
     '</div>' +
   '</div>';
 }
@@ -294,7 +346,7 @@ function renderLoadMoreButton() {
 
   const btn = document.createElement("button");
   btn.id = "rent-load-more";
-  btn.className = "col-span-2 mt-1 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 active:scale-95 transition-all";
+  btn.className = "col-span-2 mt-1 py-3.5 rounded-2xl pill press text-sm font-semibold";
   btn.textContent = t("load_more");
   btn.addEventListener("click", loadMoreRent);
   document.getElementById("ijara-grid").appendChild(btn);
@@ -383,8 +435,8 @@ function paintCollectionList() {
     const iconHTML = c.image
       ? '<img src="' + c.image + '" alt="" class="w-8 h-8 rounded-lg object-cover flex-shrink-0" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'w-8 h-8 rounded-lg bg-white/10 flex-shrink-0\'}))">'
       : '<div class="w-8 h-8 rounded-lg bg-white/10 flex-shrink-0"></div>';
-    return '<div data-address="' + (c.address || "") + '" data-name="' + c.name + '" class="collection-row flex items-center gap-3 rounded-xl p-3 cursor-pointer border ' +
-      (selected ? "bg-neon-blue/10 border-neon-blue" : "bg-white/5 border-white/10") + '">' +
+    return '<div data-address="' + (c.address || "") + '" data-name="' + c.name + '" class="collection-row press flex items-center gap-3 rounded-2xl p-3 cursor-pointer border ' +
+      (selected ? "bg-neon-blue/10 border-neon-blue/50" : "bg-white/[0.04] border-white/[0.08]") + '">' +
       iconHTML +
       '<span class="text-sm font-medium text-white flex-1">' + c.name + '</span>' +
       (selected ? '<span class="text-neon-blue text-sm">✓</span>' : '') +
@@ -429,10 +481,26 @@ async function renderPremiumList() {
   if (selectedPremiumIndex >= items.length) selectedPremiumIndex = 0;
 
   function paint() {
+    // "Популярный" — на тариф с самым долгим сроком (обычно 12 месяцев).
+    // Если совпадений несколько (напр. "12 месяцев" и "12 месяцев как подарок"),
+    // помечаем только первый по списку, чтобы бейдж не задублировался.
+    const durationOf = function(title) {
+      const m = /^(\d+)/.exec(title || "");
+      return m ? parseInt(m[1], 10) : 0;
+    };
+    const maxDuration = Math.max.apply(null, items.map(function(it) { return durationOf(it.title); }));
+    let popularMarked = false;
+
     optionsEl.innerHTML = items.map(function(it, i) {
       const selected = i === selectedPremiumIndex;
-      return '<div data-i="' + i + '" class="premium-option flex items-center justify-between gap-3 rounded-2xl p-3.5 cursor-pointer transition-all border ' +
-        (selected ? "bg-neon-blue/10 border-neon-blue" : "bg-white/5 border-white/10") + '">' +
+      const isPopular = !popularMarked && maxDuration > 0 && durationOf(it.title) === maxDuration;
+      if (isPopular) popularMarked = true;
+      const popularBadge = isPopular
+        ? '<span class="absolute -top-2 right-3 pill-gold text-[9px] font-bold px-2 py-0.5 rounded-full leading-none">' + t("badge_popular") + '</span>'
+        : "";
+      return '<div data-i="' + i + '" class="premium-option press flex items-center justify-between gap-3 rounded-2xl p-4 cursor-pointer border relative ' +
+        (selected ? "bg-neon-blue/10 border-neon-blue/50" : "bg-white/[0.04] border-white/[0.08]") + '">' +
+        popularBadge +
         '<div class="flex items-center gap-3">' +
           '<span class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ' + (selected ? "border-neon-blue" : "border-gray-500") + '">' +
             (selected ? '<span class="w-2.5 h-2.5 rounded-full bg-neon-blue"></span>' : "") +
@@ -473,9 +541,9 @@ function skeletonHTML(n, heightClass) {
 function setCategory(cat) {
   currentCategory = cat;
   Array.prototype.forEach.call(document.querySelectorAll(".cat-btn"), function(btn) {
-    btn.className = "cat-btn px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs whitespace-nowrap text-gray-300";
+    btn.className = "cat-btn press px-4 py-2 rounded-full pill text-xs whitespace-nowrap";
   });
-  document.getElementById("cat-" + cat).className = "cat-btn px-4 py-1.5 rounded-full bg-gradient-to-r from-neon-yellow to-amber-500 text-black text-xs font-bold whitespace-nowrap shadow-[0_0_10px_rgba(234,179,8,0.3)]";
+  document.getElementById("cat-" + cat).className = "cat-btn press px-4 py-2 rounded-full pill-gold text-xs font-semibold whitespace-nowrap";
   renderItems();
 }
 
@@ -493,7 +561,7 @@ function switchTab(tab) {
   if (tab === "ijara") renderIjara();
   if (tab === "tarix") renderHistory();
   if (tab === "top") renderLeaderboard(currentTopPeriod);
-  if (tab === "profil") renderProfileStats();
+  if (tab === "profil") { initProfile(); renderProfileStats(); }
 }
 
 /* ---------------- Модалка оплаты ---------------- */
@@ -789,18 +857,63 @@ function sendPaymentInfo() {
 
   if (recipientType === "friend" && friendUsername) saveRecentRecipient(friendUsername);
 
-  if (tg && tg.sendData) {
-    tg.sendData(JSON.stringify(payload));
+  // БЫЛО: tg.sendData(...) — работает ТОЛЬКО если мини-апп открыт через
+  // растянутую кнопку клавиатуры ("Do'konni ochish"). Через компактную Menu
+  // Button ("Открыть" у поля ввода) sendData() вообще не доходит до бота —
+  // это ограничение самого Telegram, не баг. Поэтому теперь заказ уходит
+  // обычным HTTP-запросом с подписью initData (её бот проверяет на сервере
+  // той же функцией, что и для Tarix/TOP/Profil) — работает одинаково
+  // из любой точки входа.
+  submitOrder(payload);
+}
+
+async function submitOrder(payload) {
+  const errorEl = document.getElementById("modal-error");
+  const base = await getShopApiUrl();
+
+  if (!base || !tg || !tg.initData) {
+    if (tg && tg.sendData) {
+      // Резервный путь на случай, если публичный API ещё не настроен
+      // (SHOP_API_URL пустой) — старый способ хотя бы не роняет заказ совсем.
+      tg.sendData(JSON.stringify(payload));
+      tg.close();
+    } else {
+      alert("DEMO (Telegram ichida ochish kerak): " + JSON.stringify(payload, null, 2));
+    }
+    return;
+  }
+
+  try {
+    const res = await fetch(base + "/public/create_order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: tg.initData, payload: payload }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      errorEl.textContent = data.error || "Xatolik yuz berdi, qayta urinib ko'ring.";
+      errorEl.classList.remove("hidden");
+      return;
+    }
     tg.close();
-  } else {
-    alert("DEMO (Telegram ichida ochish kerak): " + JSON.stringify(payload, null, 2));
+  } catch (e) {
+    errorEl.textContent = "Server bilan bog'lanib bo'lmadi, qayta urinib ko'ring.";
+    errorEl.classList.remove("hidden");
   }
 }
 
 /* ---------------- Профиль / рефералка / условия аренды ---------------- */
-function initProfile() {
-  const u = tg && tg.initDataUnsafe ? tg.initDataUnsafe.user : null;
-  if (!u) return;
+async function initProfile() {
+  // БАГ БЫЛ ЗДЕСЬ: ждали именно подписанную initData (нужна только для
+  // /public/my_orders и /public/my_stats), а initDataUnsafe.user — отдельные,
+  // неподписанные данные, которые обычно готовы раньше. Из-за завязки на
+  // не тот таймер имя/аватар иногда так и оставались плейсхолдером "—",
+  // даже когда сам Telegram уже готов был отдать данные пользователя.
+  const u = await waitForUnsafeUser();
+  if (!u) {
+    // После ожидания юзера всё ещё нет — редкий случай (например, открыли
+    // не из настоящего Telegram-клиента). Тихо оставляем плейсхолдер.
+    return;
+  }
   document.getElementById("profile-name").textContent = u.first_name || "Mijoz";
   document.getElementById("profile-username").textContent = u.username ? "@" + u.username : "";
   document.getElementById("profile-id").textContent = "ID: " + u.id;
@@ -836,9 +949,10 @@ function formatOrderDate(sqlDate) {
 async function renderHistory() {
   const listEl = document.getElementById("tarix-list");
   const base = await getShopApiUrl();
-  if (!base || !tg || !tg.initData) {
+  const initData = await waitForInitData();
+  if (!base || !initData) {
     listEl.innerHTML =
-      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<div class="glass-card rounded-[22px] p-6 text-center text-gray-400">' +
       '<p class="text-3xl mb-2">\ud83d\uded2</p><p class="text-sm">' + t("history_open_bot") + '</p></div>';
     return;
   }
@@ -847,14 +961,14 @@ async function renderHistory() {
   try {
     const res = await fetch(base + "/public/my_orders", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: tg.initData }),
+      body: JSON.stringify({ initData: initData }),
     });
     const data = await res.json();
     const orders = data.orders || [];
 
     if (!orders.length) {
       listEl.innerHTML =
-        '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+        '<div class="glass-card rounded-[22px] p-6 text-center text-gray-400">' +
         '<p class="text-3xl mb-2">\ud83d\uded2</p><p class="text-sm">' + t("history_empty") + '</p></div>';
       return;
     }
@@ -863,7 +977,7 @@ async function renderHistory() {
       const emoji = CATEGORY_EMOJI[o.category] || "\ud83d\udce6";
       const statusLabel = t(STATUS_KEY[o.status] || o.status);
       const statusColor = (o.status === "completed") ? "text-green-400" : (o.status === "rejected") ? "text-red-400" : "text-gray-400";
-      return '<div class="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center justify-between gap-2">' +
+      return '<div class="glass-card rounded-2xl p-3.5 flex items-center justify-between gap-2">' +
         '<div class="flex items-center gap-2.5 min-w-0">' +
           '<span class="text-xl flex-shrink-0">' + emoji + '</span>' +
           '<div class="min-w-0">' +
@@ -876,7 +990,7 @@ async function renderHistory() {
     }).join("");
   } catch (e) {
     listEl.innerHTML =
-      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<div class="glass-card rounded-[22px] p-6 text-center text-gray-400">' +
       '<p class="text-sm">' + t("history_empty") + '</p></div>';
   }
 }
@@ -888,10 +1002,29 @@ function setTopPeriod(period) {
     const btn = document.getElementById("top-period-" + p);
     if (!btn) return;
     btn.className = p === period
-      ? "px-3 py-1.5 rounded-full bg-gradient-to-r from-neon-yellow to-amber-500 text-black text-[11px] font-bold whitespace-nowrap"
-      : "px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-300 whitespace-nowrap";
+      ? "press px-3.5 py-2 rounded-full pill-gold text-[11px] font-semibold whitespace-nowrap"
+      : "press px-3.5 py-2 rounded-full pill text-[11px] whitespace-nowrap";
   });
   renderLeaderboard(period);
+}
+
+/** Небольшой салют вокруг короны 1-го места в рейтинге — чисто декоративно. */
+function launchConfetti() {
+  const box = document.getElementById("podium-confetti");
+  if (!box) return;
+  const colors = ["#D9B45B", "#2AABEE", "#8E8CD8", "#5AC8FA", "#F0DFA0"];
+  let html = "";
+  for (let i = 0; i < 16; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 34 + Math.random() * 30;
+    const tx = Math.round(Math.cos(angle) * dist);
+    const ty = Math.round(Math.sin(angle) * dist - 10);
+    const rot = Math.round((Math.random() - 0.5) * 480);
+    const color = colors[i % colors.length];
+    const delay = Math.round(Math.random() * 120);
+    html += '<span class="confetti-piece" style="--tx:' + tx + 'px; --ty:' + ty + 'px; --rot:' + rot + 'deg; background:' + color + '; animation-delay:' + delay + 'ms;"></span>';
+  }
+  box.innerHTML = html;
 }
 
 async function renderLeaderboard(period) {
@@ -899,14 +1032,15 @@ async function renderLeaderboard(period) {
   const base = await getShopApiUrl();
   if (!base) {
     listEl.innerHTML =
-      '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+      '<div class="glass-card rounded-[22px] p-6 text-center text-gray-400">' +
       '<p class="text-3xl mb-2">\ud83c\udfc6</p><p class="text-sm font-semibold text-white mb-1">' + t("top_forming") + '</p>' +
       '<p class="text-xs">' + t("top_hint") + '</p></div>';
     return;
   }
   listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-6">' + t("history_loading") + '</div>';
 
-  const myId = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : null;
+  const myUser = await waitForUnsafeUser();
+  const myId = myUser ? myUser.id : null;
 
   try {
     const res = await fetch(base + "/public/leaderboard?period=" + period);
@@ -915,21 +1049,66 @@ async function renderLeaderboard(period) {
 
     if (!rows.length) {
       listEl.innerHTML =
-        '<div class="bg-white/5 border border-white/10 rounded-2xl p-6 text-center text-gray-400">' +
+        '<div class="glass-card rounded-[22px] p-6 text-center text-gray-400">' +
         '<p class="text-3xl mb-2">\ud83c\udfc6</p><p class="text-sm font-semibold text-white mb-1">' + t("top_forming") + '</p>' +
         '<p class="text-xs">' + t("top_hint") + '</p></div>';
       return;
     }
 
-    const medal = ["\ud83e\udd47", "\ud83e\udd48", "\ud83e\udd49"];
-    listEl.innerHTML = rows.map(function(r, i) {
-      const name = r.full_name || (r.username ? "@" + r.username : "ID " + r.user_id);
+    const initials = function(name) { return (name || "?").trim().charAt(0).toUpperCase(); };
+
+    function personName(r) {
+      return r.full_name || (r.username ? "@" + r.username : "ID " + r.user_id);
+    }
+
+    // Подиум для топ-3: 2 место слева, 1 (приподнятое, с короной) в центре,
+    // 3 справа — у каждого места свой цвет авы под цвет медали, не одинаковый
+    // градиент для всех, плюс плавное появление при заходе на вкладку.
+    let podiumHtml = "";
+    if (rows.length >= 1) {
+      const order = [1, 0, 2].filter(function(i) { return rows[i]; }); // 2-1-3 визуально
+      const AVATAR_BG = {
+        0: "background: radial-gradient(circle at 30% 25%, #F3D98A, #D9A93B 70%);",
+        1: "background: radial-gradient(circle at 30% 25%, #D7DCE2, #9AA3AD 70%);",
+        2: "background: radial-gradient(circle at 30% 25%, #E3A567, #B5713A 70%);",
+      };
+      const RING = {
+        0: "ring-2 ring-neon-yellow", 1: "ring-2 ring-gray-300/70", 2: "ring-2 ring-amber-700/60",
+      };
+      const GLOW = { 0: "0 0 26px -2px rgba(217,180,91,0.65)", 1: "0 0 16px -4px rgba(200,205,212,0.4)", 2: "0 0 16px -4px rgba(181,113,58,0.4)" };
+      const LIFT = { 0: "-mt-5", 1: "mt-3", 2: "mt-5" };
+      const SIZE = { 0: "w-[72px] h-[72px] text-2xl", 1: "w-14 h-14 text-lg", 2: "w-14 h-14 text-lg" };
+      const rankBadge = { 0: "🥇", 1: "🥈", 2: "🥉" };
+      podiumHtml =
+        '<div class="flex items-end justify-center gap-4 pt-1 pb-6 overlay-enter">' +
+        order.map(function(i, idx) {
+          const r = rows[i];
+          const name = personName(r);
+          const isMe = myId && r.user_id === myId;
+          return '<div class="flex flex-col items-center ' + LIFT[i] + '" style="animation: sheetUp .4s cubic-bezier(.2,.9,.25,1) both; animation-delay:' + (idx * 70) + 'ms;">' +
+            (i === 0 ? '<div class="relative">' +
+              '<div id="podium-confetti" class="absolute inset-0"></div>' +
+              '<div class="text-2xl mb-1 relative" style="animation: float 2.4s ease-in-out infinite;">👑</div>' +
+            '</div>' : '<div class="h-8"></div>') +
+            '<div class="relative">' +
+              '<div class="' + SIZE[i] + ' rounded-full ' + RING[i] + ' flex items-center justify-center font-bold text-white' + (isMe ? " outline outline-2 outline-neon-blue outline-offset-2" : "") + '" style="' + AVATAR_BG[i] + ' box-shadow:' + GLOW[i] + ';">' + initials(name) + '</div>' +
+              '<span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 text-base leading-none">' + rankBadge[i] + '</span>' +
+            '</div>' +
+            '<div class="text-[11.5px] font-semibold text-white mt-2.5 max-w-[84px] truncate text-center">' + name + '</div>' +
+            '<div class="text-[11px] font-bold text-neon-yellow">' + fmtUZS(r.total_uzs) + '</div>' +
+          '</div>';
+        }).join("") +
+        '</div>';
+    }
+
+    const restHtml = rows.slice(3).map(function(r, idx) {
+      const i = idx + 3;
+      const name = personName(r);
       const isMe = myId && r.user_id === myId;
-      const rankBadge = i < 3 ? '<span class="text-lg">' + medal[i] + '</span>' : '<span class="text-xs text-gray-500 w-5 text-center">' + (i + 1) + '</span>';
-      return '<div class="flex items-center justify-between gap-2 rounded-xl p-3 ' +
-        (isMe ? "bg-neon-blue/10 border border-neon-blue/40" : "bg-white/5 border border-white/10") + '">' +
+      return '<div class="press flex items-center justify-between gap-2 rounded-2xl p-3.5 ' +
+        (isMe ? "bg-neon-blue/10 border border-neon-blue/40" : "glass-card") + '">' +
         '<div class="flex items-center gap-3 min-w-0">' +
-          rankBadge +
+          '<span class="text-[11px] font-bold text-gray-500 w-6 h-6 rounded-full bg-white/[0.06] flex items-center justify-center flex-shrink-0">' + (i + 1) + '</span>' +
           '<div class="min-w-0">' +
             '<div class="text-xs font-semibold text-white truncate">' + name + (isMe ? ' \u00b7 <span class="text-neon-blue">' + t("top_you") + '</span>' : '') + '</div>' +
             '<div class="text-[10px] text-gray-400">' + r.orders_count + ' ' + t("top_orders_suffix") + '</div>' +
@@ -938,6 +1117,9 @@ async function renderLeaderboard(period) {
         '<div class="text-xs font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(r.total_uzs) + '</div>' +
       '</div>';
     }).join("");
+
+    listEl.innerHTML = podiumHtml + '<div class="space-y-2">' + restHtml + '</div>';
+    launchConfetti();
   } catch (e) {
     listEl.innerHTML = '<div class="text-center text-xs text-gray-500 py-6">' + t("top_empty") + '</div>';
   }
@@ -946,12 +1128,13 @@ async function renderLeaderboard(period) {
 async function renderProfileStats() {
   const box = document.getElementById("profile-stats-box");
   const base = await getShopApiUrl();
-  if (!base || !tg || !tg.initData) { box.classList.add("hidden"); return; }
+  const initData = await waitForInitData();
+  if (!base || !initData) { box.classList.add("hidden"); return; }
 
   try {
     const res = await fetch(base + "/public/my_stats", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData: tg.initData }),
+      body: JSON.stringify({ initData: initData }),
     });
     const stats = await res.json();
 
@@ -970,7 +1153,7 @@ async function renderProfileStats() {
         (stats.rank ? '<span class="text-[10px] text-neon-yellow font-semibold">' + t("profile_stats_rank") + ': #' + stats.rank + '</span>' : '') +
       '</div>' +
       catRows +
-      '<div class="flex justify-between items-center text-xs pt-2 mt-1 border-t border-white/10">' +
+      '<div class="flex justify-between items-center text-xs pt-2 mt-1 border-t border-white/[0.08]">' +
         '<span class="font-bold text-white">' + t("profile_stats_total") + '</span>' +
         '<span class="font-bold text-neon-blue">' + fmtUZS(stats.total_uzs || 0) + '</span></div>';
   } catch (e) {
@@ -987,10 +1170,42 @@ async function renderRentTerms() {
 }
 
 /* ---------------- Init ---------------- */
+/**
+ * Тихая диагностика — НЕ показывается пользователю (это была ошибка в
+ * прошлый раз с текстом "DEBUG: ..."). Просто один раз отправляет на сервер
+ * реальную картину того, что видит этот конкретный телефон: есть ли вообще
+ * window.Telegram.WebApp, дождались ли initData/initDataUnsafe.user, сколько
+ * это заняло, какая платформа/версия Telegram. Смотрится потом в логах
+ * Railway — так можно найти причину точно, а не гадать по скриншотам.
+ */
+async function sendDiag() {
+  const base = await getShopApiUrl();
+  if (!base) return;
+  const t0 = Date.now();
+  const initData = await waitForInitData();
+  const user = await waitForUnsafeUser();
+  try {
+    await fetch(base + "/public/_diag", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tg_exists: !!tg,
+        platform: tg ? tg.platform : null,
+        version: tg ? tg.version : null,
+        initData_len: initData ? initData.length : 0,
+        unsafe_user_exists: !!user,
+        unsafe_user_id: user ? user.id : null,
+        wait_ms: Date.now() - t0,
+        ua: navigator.userAgent,
+      }),
+    });
+  } catch (e) { /* тихо игнорируем — это диагностика, не критично */ }
+}
+
 applyI18n();
 initProfile();
 initSupportInfo();
 initLiveFeed();
+sendDiag();
 
 /* ---------------- Живая лента заказов ---------------- */
 function timeAgoLabel(ts) {
