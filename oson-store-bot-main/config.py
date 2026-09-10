@@ -1,0 +1,115 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Токен бота от @BotFather
+BOT_TOKEN = os.getenv("BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
+
+# ID админов через запятую в .env: ADMIN_IDS=111111,222222
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+
+# Реквизиты для ручной оплаты (Click/Payme/карта) — показываются пользователю
+PAYMENT_CARD_NUMBER = os.getenv("PAYMENT_CARD_NUMBER", "0000 0000 0000 0000")
+PAYMENT_CARD_HOLDER = os.getenv("PAYMENT_CARD_HOLDER", "IVANOV IVAN")
+PAYMENT_CLICK_LINK = os.getenv("PAYMENT_CLICK_LINK", "")
+PAYMENT_PAYME_LINK = os.getenv("PAYMENT_PAYME_LINK", "")
+
+# TON-кошелёк для автоматизации больше не хранится в .env — бот готовит
+# транзакции через API MarketApp, а подписывает их админ вручную в своём
+# кошельке (Tonkeeper и т.п.) по ссылке, которую присылает бот.
+
+DB_PATH = os.getenv("DB_PATH", "data/shop.db")
+
+CURRENCY = "UZS"
+
+# ---- Аренда NFT-подарков через MarketApp ----
+MARKETAPP_API_KEY = os.getenv("MARKETAPP_API_KEY", "")
+
+# Наценка на базовую цену аренды (в долях), см. services/marketapp_service.py
+RENT_MARKUP = float(os.getenv("RENT_MARKUP", "1.25"))  # +25%
+
+# Курс: сколько сум стоит 1 грамм TON (обнови при изменении курса)
+TON_GRAM_RATE_UZS = int(os.getenv("TON_GRAM_RATE_UZS", "18250"))
+
+# Защита от опечаток в переменных Railway (например TON_GRAM_RATE_UZS=1850
+# вместо 18250 — цены на аренду тихо занижаются в 10 раз, без этой проверки
+# заметить такое можно только вручную сверяя с marketapp.org).
+if not (5000 <= TON_GRAM_RATE_UZS <= 50000):
+    print(
+        f"⚠️ ВНИМАНИЕ: TON_GRAM_RATE_UZS={TON_GRAM_RATE_UZS} выглядит подозрительно "
+        f"(ожидается диапазон 5000-50000 сум за 1 GRAM). Проверь переменную на Railway — "
+        f"похоже на опечатку (пропущенная цифра), из-за которой цены аренды будут неверными."
+    )
+
+# Комиссия за сделку аренды — в граммах TON, и какой % возвращается арендатору
+RENT_FEE_GRAM = float(os.getenv("RENT_FEE_GRAM", "0.1"))
+RENT_FEE_REFUND_PERCENT = int(os.getenv("RENT_FEE_REFUND_PERCENT", "40"))
+
+# Минимальная цена/день для показа гифта в аренде (сум) — отсекает "мусорные"/тестовые
+# лоты с почти нулевой ценой, которые иначе вылезают первыми при сортировке по цене
+RENT_MIN_DISPLAY_UZS = int(os.getenv("RENT_MIN_DISPLAY_UZS", "300"))
+
+# ---- Простые подарки (мишка/сердце/коробка и т.д.) ----
+# Цена = кол-во звёзд подарка * этот коэффициент (сум за 1 звезду, с наценкой 20%)
+STAR_UNIT_PRICE_UZS = float(os.getenv("STAR_UNIT_PRICE_UZS", "213.3"))
+
+# Подарки, снятые Telegram с продажи (см. data/extra_gifts.json), продаются по
+# отдельной фиксированной цене, а не по текущему курсу за звезду — если в
+# extra_gifts.json для конкретного подарка не указан свой price_uzs, берём это.
+EXTRA_GIFT_LEGACY_PRICE_UZS = int(os.getenv("EXTRA_GIFT_LEGACY_PRICE_UZS", "13000"))
+
+# ---- Мини-апп ----
+# URL веб-версии магазина (адрес второго сервиса на Railway, после деплоя webapp_server.py)
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
+
+# ---- Видео-тутор "как получить ссылку для аренды" ----
+# Значение — Telegram file_id видео (получить его: отправь видео боту через
+# команду /getfileid) ИЛИ прямая ссылка на .mp4. Если пусто — клиенту после
+# оплаты аренды видео не придёт (только текстовая просьба прислать ссылку).
+RENT_TUTORIAL_VIDEO = os.getenv("RENT_TUTORIAL_VIDEO", "")
+
+# ---- Автопроверка оплаты по уникальной сумме ----
+# Каждому заказу выдаётся сумма к оплате = цена + случайная надбавка (1..N сум),
+# уникальная среди всех сейчас неоплаченных заказов. Когда SMS о поступлении
+# денег на карту пересылается в чат SMS_RELAY_CHAT_ID, бот по точной сумме
+# понимает, чей это платёж, и подтверждает заказ автоматически — без ручной
+# проверки скриншота админом.
+UNIQUE_AMOUNT_ENABLED = os.getenv("UNIQUE_AMOUNT_ENABLED", "false").lower() == "true"
+UNIQUE_AMOUNT_MAX_OFFSET = int(os.getenv("UNIQUE_AMOUNT_MAX_OFFSET", "500"))
+# ID чата/канала, куда SMS-пересыльщик (приложение на телефоне) отправляет
+# текст входящих SMS от банка. Бот должен быть добавлен в этот чат.
+SMS_RELAY_CHAT_ID = int(os.getenv("SMS_RELAY_CHAT_ID", "0") or "0")
+
+# ---- Публичный канал с выполненными заказами (для доверия новых клиентов) ----
+# Можно указать @username канала (для публичных) или числовой ID (-100...) для приватных.
+# Бот должен быть добавлен в канал как администратор с правом публикации.
+PUBLIC_ORDERS_CHANNEL = os.getenv("PUBLIC_ORDERS_CHANNEL", "")
+
+# ---- Обязательная подписка на канал перед использованием бота ----
+REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "")
+REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK", "")
+
+# ---- Контакты в профиле мини-аппа ----
+OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "")
+
+# ---- Внутренний секрет для связи бота с веб-сервисом (живая лента заказов) ----
+# Один и тот же секрет должен быть прописан в ОБОИХ сервисах на Railway.
+INTERNAL_PUSH_SECRET = os.getenv("INTERNAL_PUSH_SECRET", "")
+
+# ---- API для отдельного бота-аналитика (доход/расход/прибыль) ----
+# Если ANALYTICS_API_SECRET пустой — сервер аналитики просто не запускается.
+# Тот же секрет и порт должны быть прописаны в .env бота-аналитика (analytics_bot).
+ANALYTICS_API_SECRET = os.getenv("ANALYTICS_API_SECRET", "")
+STATS_API_PORT = int(os.getenv("STATS_API_PORT", "8081"))
+
+# Не используется в ЭТОМ сервисе напрямую (тут не webapp_server, а bot.py) —
+# оставлено для консистентности файлов между tg_shop_bot и oson-store-web,
+# у которого этот же webapp_server.py реально задеплоен как отдельный сервис.
+SHOP_API_URL = os.getenv("SHOP_API_URL", "").rstrip("/")
+
+# Тоже не используется напрямую в этом сервисе (см. комментарий выше) —
+# путь на persistent Volume, где oson-store-web хранит картинки подарков
+# и extra_gifts.json (обычный диск Railway не переживает передеплой).
+PERSIST_DIR = os.getenv("PERSIST_DIR", os.path.join(os.path.dirname(__file__), "data", "persist"))
+

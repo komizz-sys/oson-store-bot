@@ -1,0 +1,303 @@
+"""
+Отдельный процесс (запускается на Railway как второй сервис "Web").
+Отдаёт статику мини-аппа (webapp/) и JSON-каталог для него.
+Заказы НЕ создаёт и в базу не пишет — это делает бот через web_app_data,
+чтобы не дублировать логику оплаты/подтверждения. Этот сервис только читает.
+"""
+
+import json
+import os
+import shutil
+import time
+
+import httpx
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+
+import config
+from services.prices import get_stars_packages, get_premium_packages
+from services.marketapp_service import get_available_gifts, get_rent_collections
+
+# ВАЖНО: диск контейнера на Railway НЕ переживает передеплой — при каждом
+# новом деплое сервис поднимается заново из git-репозитория, и любые файлы,
+# записанные в рантайме внутрь папки проекта (как раньше было с
+# webapp/gift_images и data/extra_gifts.json), просто исчезают. Поэтому и
+# картинки добавленных через /addgift подарков, и сам файл с ними должны
+# жить на подключённом персистентном Volume (config.PERSIST_DIR — путь его
+# монтирования), а не внутри репозитория.
+EXTRA_GIFTS_PATH = os.path.join(config.PERSIST_DIR, "extra_gifts.json")
+GIFT_IMAGES_DIR = os.path.join(config.PERSIST_DIR, "gift_images")
+
+# Если это первый запуск с volume (файла там ещё нет) — переносим то, что
+# было закоммичено в репозитории раньше, чтобы не потерять уже добавленные
+# вручную 11 подарков из старой data/extra_gifts.json.
+_REPO_EXTRA_GIFTS_SEED = os.path.join(os.path.dirname(__file__), "data", "extra_gifts.json")
+
+
+def _ensure_persist_seeded():
+    os.makedirs(config.PERSIST_DIR, exist_ok=True)
+    os.makedirs(GIFT_IMAGES_DIR, exist_ok=True)
+    if not os.path.exists(EXTRA_GIFTS_PATH) and os.path.exists(_REPO_EXTRA_GIFTS_SEED):
+        shutil.copyfile(_REPO_EXTRA_GIFTS_SEED, EXTRA_GIFTS_PATH)
+
+
+_ensure_persist_seeded()
+
+
+def _load_extra_gifts() -> list[dict]:
+    """
+    Подарки, которых уже НЕТ в getAvailableGifts (Telegram снял их с продажи
+    в обычном магазине), но которые всё ещё можно ПОДАРИТЬ через sendGift,
+    если знать их точный gift_id. Telegram не даёт способа узнать
+    star_count/эмодзи для такого id программно — эти данные вписываются
+    в data/extra_gifts.json вручную (см. файл). Если файла нет или он
+    битый — просто игнорируем, ничего не падает.
+    """
+    try:
+        with open(EXTRA_GIFTS_PATH, encoding="utf-8") as f:
+            items = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+    result = []
+    for it in items:
+        if not it.get("id") or not it.get("star_count"):
+            continue
+        star_count = int(it["star_count"])
+        result.append({
+            "id": str(it["id"]),
+            "star_count": star_count,
+            # БАГ БЫЛ ЗДЕСЬ: раньше price_uzs всегда пересчитывался по курсу звезды
+            # и вручную заданная цена из extra_gifts.json полностью игнорировалась.
+            # Теперь явно заданная цена в приоритете, а если её нет — фиксированная
+            # цена "снятого с продажи" подарка (не курс звезды).
+            "price_uzs": int(it["price_uzs"]) if it.get("price_uzs") else config.EXTRA_GIFT_LEGACY_PRICE_UZS,
+            "sticker_emoji": it.get("sticker_emoji", "🎁"),
+            # БАГ БЫЛ ЗДЕСЬ: image_url вообще не прокидывался в ответ API, поэтому
+            # даже загруженная через /addgift картинка никогда не доходила до фронта.
+            "image_url": it.get("image_url"),
+        })
+    return result
+
+app = FastAPI(title="Gift Shop Mini App API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def no_cache_headers(request, call_next):
+    """
+    Telegram WebView агрессивно кэширует статику мини-аппа — после деплоя
+    новой версии люди могут ещё долго видеть старую. Запрещаем кэш вообще,
+    чтобы обновления доходили сразу.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+_bot_username_cache: str | None = None
+
+
+@app.get("/api/stars")
+async def api_stars():
+    return get_stars_packages()
+
+
+@app.get("/api/stars_rate")
+async def api_stars_rate():
+    """Сум за 1 звезду — для произвольного количества (не из готовых пакетов)."""
+    return {"rate_uzs_per_star": config.STAR_UNIT_PRICE_UZS, "min_stars": 50}
+
+
+@app.get("/api/premium")
+async def api_premium():
+    return get_premium_packages()
+
+
+def _save_extra_gift(gift_id: str, star_count: int, price_uzs: int, sticker_emoji: str, image_url: str | None):
+    """Добавляет/обновляет одну запись в data/extra_gifts.json (по id)."""
+    try:
+        with open(EXTRA_GIFTS_PATH, encoding="utf-8") as f:
+            items = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        items = []
+
+    entry = {"id": gift_id, "star_count": star_count, "price_uzs": price_uzs, "sticker_emoji": sticker_emoji}
+    if image_url:
+        entry["image_url"] = image_url
+
+    items = [it for it in items if str(it.get("id")) != gift_id]  # заменяем старую запись с тем же id, если была
+    items.append(entry)
+
+    with open(EXTRA_GIFTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(items, f, ensure_ascii=False, indent=2)
+
+
+@app.post("/internal/add_gift")
+async def internal_add_gift(request: Request):
+    """
+    Принимает от бота (tg_shop_bot) данные о снятом с продажи подарке —
+    включая картинку (если админ её прислал), которую бот сам достал из
+    Telegram и передал сюда, потому что только у ЭТОГО сервиса есть диск,
+    на котором лежит статика webapp/ (Railway не умеет шарить один volume
+    между двумя разными сервисами).
+    """
+    if not config.INTERNAL_PUSH_SECRET or request.headers.get("X-Internal-Secret") != config.INTERNAL_PUSH_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    body = await request.json()
+    gift_id = str(body["gift_id"])
+    star_count = int(body["star_count"])
+    price_uzs = int(body["price_uzs"])
+    sticker_emoji = body.get("sticker_emoji") or "🎁"
+
+    image_url = None
+    if body.get("image_base64"):
+        import base64
+        ext = body.get("image_ext", "jpg")
+        os.makedirs(GIFT_IMAGES_DIR, exist_ok=True)
+        with open(os.path.join(GIFT_IMAGES_DIR, f"{gift_id}.{ext}"), "wb") as f:
+            f.write(base64.b64decode(body["image_base64"]))
+        image_url = f"/gift_images/{gift_id}.{ext}"
+
+    _save_extra_gift(gift_id, star_count, price_uzs, sticker_emoji, image_url)
+    return {"ok": True, "image_url": image_url}
+
+
+@app.get("/api/simple_gift")
+async def api_simple_gift():
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"https://api.telegram.org/bot{config.BOT_TOKEN}/getAvailableGifts")
+        r.raise_for_status()
+        data = r.json()
+
+    gifts = []
+    seen_ids = set()
+    for g in data.get("result", {}).get("gifts", []):
+        if g.get("remaining_count") is not None:
+            continue  # лимитированные пропускаем — это "простые" подарки
+        star_count = g["star_count"]
+        gifts.append({
+            "id": g["id"],
+            "star_count": star_count,
+            "price_uzs": round(star_count * config.STAR_UNIT_PRICE_UZS),
+            "sticker_emoji": (g.get("sticker") or {}).get("emoji", "🎁"),
+        })
+        seen_ids.add(g["id"])
+
+    for extra in _load_extra_gifts():
+        if extra["id"] not in seen_ids:  # не дублируем, если Telegram вдруг снова его продаёт
+            gifts.append(extra)
+            seen_ids.add(extra["id"])
+
+    gifts.sort(key=lambda x: x["star_count"])
+    return gifts
+
+
+@app.get("/api/nft_rent")
+async def api_nft_rent(sort_by: str = "recently_touch", cursor: str | None = None, collection_address: str | None = None):
+    return await get_available_gifts(limit=15, sort_by=sort_by, cursor=cursor, collection_address=collection_address)
+
+
+@app.get("/api/rent_collections")
+async def api_rent_collections():
+    return await get_rent_collections()
+
+
+# ---- Живая лента выполненных заказов ("Jonli") ----
+# Хранится только в памяти процесса (сбрасывается при передеплое) — это
+# витрина доверия, не критичные данные, БД для этого не нужна.
+_live_feed: list[dict] = []
+_LIVE_FEED_MAX = 30
+
+
+@app.post("/api/live_feed/push")
+async def push_live_feed(request: Request):
+    if not config.INTERNAL_PUSH_SECRET or request.headers.get("X-Internal-Secret") != config.INTERNAL_PUSH_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    payload = await request.json()
+    _live_feed.insert(0, {
+        "emoji": payload.get("emoji", "🎁"),
+        "label": payload.get("label", ""),
+        "ts": time.time(),
+    })
+    del _live_feed[_LIVE_FEED_MAX:]
+    return {"ok": True}
+
+
+@app.get("/api/live_feed")
+async def get_live_feed():
+    return _live_feed
+
+
+@app.get("/api/payment_info")
+async def api_payment_info():
+    """Реквизиты для оплаты — чтобы не хардкодить в JS и не пересобирать фронт при смене карты."""
+    return {
+        "card_number": config.PAYMENT_CARD_NUMBER,
+        "card_holder": config.PAYMENT_CARD_HOLDER,
+    }
+
+
+@app.get("/api/rent_terms")
+async def api_rent_terms():
+    """Параметры комиссии аренды — считается на лету, всегда синхронно с .env бота."""
+    fee_uzs = round(config.RENT_FEE_GRAM * config.TON_GRAM_RATE_UZS)
+    refund_uzs = round(fee_uzs * config.RENT_FEE_REFUND_PERCENT / 100)
+    return {
+        "fee_gram": config.RENT_FEE_GRAM,
+        "fee_uzs": fee_uzs,
+        "refund_percent": config.RENT_FEE_REFUND_PERCENT,
+        "refund_uzs": refund_uzs,
+    }
+
+
+@app.get("/api/bot_info")
+async def api_bot_info():
+    """Юзернейм бота — для реферальной ссылки. Кэшируется в памяти процесса."""
+    global _bot_username_cache
+    if _bot_username_cache is None:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(f"https://api.telegram.org/bot{config.BOT_TOKEN}/getMe")
+            r.raise_for_status()
+            _bot_username_cache = r.json()["result"]["username"]
+    return {"username": _bot_username_cache}
+
+
+@app.get("/api/support_info")
+async def api_support_info():
+    """Контакты для раздела Profil: оператор + каналы. Пустая строка — строка скрывается на фронте."""
+    def clean(v: str) -> str:
+        return v.lstrip("@") if v else ""
+
+    return {
+        "operator_username": clean(config.OPERATOR_USERNAME),
+        "channel_username": clean(config.REQUIRED_CHANNEL) if config.REQUIRED_CHANNEL.startswith("@") else "",
+        "orders_channel_username": clean(config.PUBLIC_ORDERS_CHANNEL) if config.PUBLIC_ORDERS_CHANNEL.startswith("@") else "",
+    }
+
+
+@app.get("/api/config")
+async def api_config():
+    """Адрес паблик-API бота (сервис tg_shop_bot/worker) — для вкладок
+    Tarix/TOP/Profil. Пустая строка — эти вкладки на фронте покажут заглушку
+    вместо ошибки (SHOP_API_URL ещё не настроен)."""
+    return {"shop_api_url": config.SHOP_API_URL}
+
+
+# /gift_images — картинки подарков, добавленных через /addgift, лежат на
+# persist-volume вне папки webapp/, поэтому монтируем отдельно и раньше,
+# чем общую статику мини-аппа.
+app.mount("/gift_images", StaticFiles(directory=GIFT_IMAGES_DIR), name="gift_images")
+
+# Статика мини-аппа — подключаем последней, чтобы не перекрывать /api/*
+app.mount("/", StaticFiles(directory="webapp", html=True), name="webapp")
