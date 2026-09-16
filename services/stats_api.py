@@ -17,7 +17,16 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
 import config
-from database.db import get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard
+import re
+
+from database.db import (
+    get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard,
+    get_pending_rent_link_order, set_rent_link,
+)
+from services import marketapp_api
+
+# Тот же формат ссылки, что принимает обработчик в чате (handlers/rent_link.py)
+_RENT_LINK_RE = re.compile(r"^(tc://\S+|https?://\S+|t\.me/\S+)$", re.IGNORECASE)
 from services.telegram_auth import validate_init_data
 from services.order_processing import process_order, OrderError
 
@@ -93,6 +102,101 @@ async def handle_my_stats(request: web.Request) -> web.Response:
 
     stats = await get_user_spend_stats(user["id"])
     return web.json_response(stats)
+
+
+async def handle_active_order(request: web.Request) -> web.Response:
+    """
+    Активный (ещё не завершённый) заказ клиента — чтобы витрина могла показать
+    "у вас есть заказ в работе" после перезахода, и понять, не ждём ли мы от
+    него ссылку для аренды. Реальные статусы из БД, ничего не выдумываем.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    orders = await get_user_orders(user["id"])
+    active = next(
+        (o for o in orders if o["status"] in ("awaiting_payment", "payment_review", "paid", "fulfilling")),
+        None,
+    )
+    if not active:
+        return web.json_response({"active": None})
+
+    # Ждём ли от клиента tc://-ссылку для подключения аренды
+    needs_link = bool(
+        active["category"] == "nft_rent"
+        and active["status"] == "paid"
+        and not (active.get("rent_link") or "")
+    )
+    return web.json_response({
+        "active": {
+            "id": active["id"],
+            "category": active["category"],
+            "item_name": active["item_name"],
+            "price_uzs": active["price_uzs"],
+            "status": active["status"],
+            "needs_rent_link": needs_link,
+        }
+    })
+
+
+async def handle_submit_rent_link(request: web.Request) -> web.Response:
+    """
+    Приём tc://-ссылки прямо из витрины (раньше клиент присылал её в чат боту).
+    Сразу пытаемся подключить аренду через marketapp — тем же методом, что и
+    обработчик в чате, чтобы логика не разъехалась.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    link = (body.get("link") or "").strip()
+    if not _RENT_LINK_RE.match(link):
+        return web.json_response({"error": "bad_link"}, status=400)
+
+    order = await get_pending_rent_link_order(user["id"])
+    if not order:
+        return web.json_response({"error": "no_pending_order"}, status=400)
+
+    await set_rent_link(order["id"], link)
+
+    try:
+        await marketapp_api.rent_connect_tonconnect(order["nft_address"], link)
+    except Exception as e:
+        # Не врём клиенту про успех — говорим, что подключит оператор, и зовём админа.
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await _bot.send_message(
+                    admin_id,
+                    f"⚠️ Заказ #{order['id']} ({order['item_name']}) — АВТОподключение аренды "
+                    f"не удалось: {e}\n\nСсылка клиента:\n<code>{link}</code>\n\n"
+                    "Подключи вручную на marketapp.org, затем нажми «Заказ выполнен».",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+        return web.json_response({"ok": False, "error": "connect_failed"})
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await _bot.send_message(
+                admin_id,
+                f"✅ Заказ #{order['id']} ({order['item_name']}) — аренда подключена "
+                f"АВТОМАТИЧЕСКИ клиенту {order['recipient']}. Вручную ничего делать не нужно.",
+            )
+        except Exception:
+            pass
+    return web.json_response({"ok": True, "item_name": order["item_name"], "order_id": order["id"]})
 
 
 async def handle_leaderboard(request: web.Request) -> web.Response:
@@ -189,7 +293,10 @@ async def start_stats_server(bot, storage):
     app.router.add_get("/public/leaderboard", handle_leaderboard)
     app.router.add_post("/public/_diag", handle_diag)
     app.router.add_post("/public/create_order", handle_create_order)
-    for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order"):
+    app.router.add_post("/public/active_order", handle_active_order)
+    app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
+    for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
+                 "/public/active_order", "/public/submit_rent_link"):
         app.router.add_route("OPTIONS", path, handle_preflight)
 
     runner = web.AppRunner(app)

@@ -76,6 +76,15 @@ const I18N = {
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Sovg'a", cat_nft_rent: "\ud83d\uddbc Ijara",
     top_period_today: "Bugun", top_period_week: "Hafta", top_period_month: "Oy", top_period_all: "Hammasi",
     top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.", badge_popular: "Mashhur", per_star: "so'm / yulduz", profile_no_purchases: "Birinchi xaridni amalga oshiring 🚀",
+    howto_title: "🎁 Ijara qanday ishlaydi?",
+    howto_steps: ["Gift va ijara muddatini tanlang", "Buyurtmani rasmiylashtiring va to'lovni amalga oshiring", "Admin to'lovni tasdiqlaydi", "Telegram botga tutorial video yuboriladi", "Videoni ko'rib, Telegram'dan shaxsiy havolangizni oling", "Havolani shu yerdagi maydonga joylang", "Havola tekshiriladi va sovg'a ulanadi", "Sovg'a profilingizda ko'rinadi ✅"],
+    ao_title: "Aktiv buyurtma", ao_awaiting_payment: "To'lov kutilmoqda", ao_payment_review: "To'lov tekshirilmoqda",
+    ao_paid: "To'lov tasdiqlandi", ao_fulfilling: "Bajarilmoqda",
+    ao_link_title: "Keyingi qadam: havolani kiriting", ao_link_hint: "Botga yuborilgan tutorial videodagi ko'rsatma bo'yicha olingan havolani joylang.",
+    ao_link_send: "Havolani yuborish", ao_watch_tutorial: "Tutorialni ko'rish (botda)",
+    ao_connected: "Sovg'a profilingizga ulandi!",
+    ao_err_empty: "Havolani kiriting", ao_err_bad_link: "Havola noto'g'ri. U tc:// bilan boshlanishi kerak.",
+    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
     order_success_title: "Buyurtma muvaffaqiyatli qabul qilindi", order_success_hint: "Tez orada tasdiqlaymiz — natija shu botda yoziladi.",
@@ -108,6 +117,15 @@ const I18N = {
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Подарок", cat_nft_rent: "\ud83d\uddbc Аренда",
     top_period_today: "Сегодня", top_period_week: "Неделя", top_period_month: "Месяц", top_period_all: "Всё время",
     top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.", badge_popular: "Популярный", per_star: "сум / звезда", profile_no_purchases: "Сделайте первую покупку 🚀",
+    howto_title: "🎁 Как работает аренда?",
+    howto_steps: ["Выберите подарок и срок аренды", "Оформите заказ и оплатите", "Админ подтверждает оплату", "В Telegram-бот приходит видео-инструкция", "Посмотрите видео и получите свою персональную ссылку", "Вставьте ссылку в поле здесь", "Ссылка проверяется, подарок подключается", "Подарок появляется в вашем профиле ✅"],
+    ao_title: "Активный заказ", ao_awaiting_payment: "Ждём оплату", ao_payment_review: "Проверяем оплату",
+    ao_paid: "Оплата подтверждена", ao_fulfilling: "Выполняется",
+    ao_link_title: "Следующий шаг: вставьте ссылку", ao_link_hint: "Вставьте ссылку, полученную по инструкции из видео, которое пришло в бот.",
+    ao_link_send: "Отправить ссылку", ao_watch_tutorial: "Посмотреть инструкцию (в боте)",
+    ao_connected: "Подарок подключён к профилю!",
+    ao_err_empty: "Введите ссылку", ao_err_bad_link: "Неверная ссылка. Она должна начинаться с tc://",
+    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
     order_success_title: "Заказ успешно оформлен", order_success_hint: "Скоро подтвердим — результат придёт в этот же чат.",
@@ -140,6 +158,15 @@ const I18N = {
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Gift", cat_nft_rent: "\ud83d\uddbc Rent",
     top_period_today: "Today", top_period_week: "Week", top_period_month: "Month", top_period_all: "All time",
     top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.", badge_popular: "Popular", per_star: "so'm / star", profile_no_purchases: "Make your first purchase 🚀",
+    howto_title: "🎁 How does renting work?",
+    howto_steps: ["Pick a gift and rental period", "Place the order and pay", "Admin confirms your payment", "A tutorial video is sent to the Telegram bot", "Watch it and get your personal link from Telegram", "Paste the link into the field here", "The link is verified and the gift is connected", "The gift appears on your profile ✅"],
+    ao_title: "Active order", ao_awaiting_payment: "Awaiting payment", ao_payment_review: "Checking payment",
+    ao_paid: "Payment confirmed", ao_fulfilling: "In progress",
+    ao_link_title: "Next step: paste your link", ao_link_hint: "Paste the link you got by following the tutorial video sent to the bot.",
+    ao_link_send: "Send link", ao_watch_tutorial: "Watch tutorial (in bot)",
+    ao_connected: "Gift connected to your profile!",
+    ao_err_empty: "Enter the link", ao_err_bad_link: "Invalid link. It should start with tc://",
+    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
     order_success_title: "Order placed successfully", order_success_hint: "We'll confirm soon — the result will be posted in this chat.",
@@ -1356,3 +1383,126 @@ async function initLiveFeed() {
   paint();
   setInterval(paint, 3500);
 }
+
+/* ================= Как работает аренда (пошагово) ================= */
+function toggleRentHowto() {
+  const box = document.getElementById("rent-howto");
+  const arrow = document.getElementById("howto-arrow");
+  const opening = box.classList.contains("hidden");
+  if (opening && !box.innerHTML) {
+    box.innerHTML = (t("howto_steps") || []).map(function(step, i) {
+      return '<div class="glass-card rounded-2xl p-3 flex items-start gap-3" ' +
+        'style="animation: sheetUp .3s cubic-bezier(.2,.9,.25,1) both; animation-delay:' + (i * 40) + 'ms;">' +
+        '<span class="w-6 h-6 rounded-full bg-neon-blue/15 text-neon-blue text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">' + (i + 1) + '</span>' +
+        '<span class="text-[12px] text-gray-300 leading-snug">' + step + '</span>' +
+      '</div>';
+    }).join("");
+  }
+  box.classList.toggle("hidden");
+  arrow.style.transform = opening ? "rotate(180deg)" : "";
+}
+
+/* ================= Активный заказ + ввод ссылки аренды ================= */
+const ORDER_STATUS_KEY = {
+  awaiting_payment: "ao_awaiting_payment",
+  payment_review: "ao_payment_review",
+  paid: "ao_paid",
+  fulfilling: "ao_fulfilling",
+};
+
+async function refreshActiveOrder() {
+  const bar = document.getElementById("active-order-bar");
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) { bar.classList.add("hidden"); return; }
+
+  let active = null;
+  try {
+    const res = await fetch(base + "/public/active_order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData }),
+    });
+    const data = await res.json();
+    active = data.active;
+  } catch (e) { /* молча — баннер просто не покажем */ }
+
+  if (!active) { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
+
+  const statusText = t(ORDER_STATUS_KEY[active.status] || "ao_fulfilling");
+  const linkBlock = active.needs_rent_link
+    ? '<div class="mt-3 pt-3 border-t border-white/[0.08]">' +
+        '<div class="text-[12px] font-semibold text-white mb-1">🔗 ' + t("ao_link_title") + '</div>' +
+        '<div class="text-[11px] text-gray-400 mb-2.5 leading-snug">' + t("ao_link_hint") + '</div>' +
+        '<input id="rent-link-input" type="text" placeholder="tc://..." class="w-full bg-white/[0.04] border border-white/[0.09] rounded-xl px-3 py-2.5 text-[11px] text-white focus:outline-none focus:border-neon-blue/60 mb-2" />' +
+        '<p id="rent-link-error" class="hidden text-red-400 text-[11px] mb-2"></p>' +
+        '<button onclick="submitRentLink()" id="rent-link-btn" class="press w-full py-3 rounded-xl btn-primary font-semibold text-white text-[13px] mb-2">' + t("ao_link_send") + '</button>' +
+        '<button onclick="openBotForTutorial()" class="press w-full py-2.5 rounded-xl pill text-[11px] font-medium">🎥 ' + t("ao_watch_tutorial") + '</button>' +
+      '</div>'
+    : "";
+
+  bar.classList.remove("hidden");
+  bar.innerHTML =
+    '<div class="glass-card rounded-[20px] p-4 overlay-enter" style="border-color: rgba(42,171,238,0.35);">' +
+      '<div class="flex items-center justify-between gap-2">' +
+        '<div class="min-w-0">' +
+          '<div class="text-[10px] text-neon-blue font-bold uppercase tracking-wider mb-0.5">' + t("ao_title") + ' #' + active.id + '</div>' +
+          '<div class="text-[13px] font-semibold text-white truncate">' + active.item_name + '</div>' +
+          '<div class="text-[11px] text-gray-400 mt-0.5">' + statusText + '</div>' +
+        '</div>' +
+        '<div class="text-[12px] font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(active.price_uzs) + '</div>' +
+      '</div>' +
+      linkBlock +
+    '</div>';
+}
+
+function openBotForTutorial() {
+  // Открываем чат с ботом, где уже лежит видео-инструкция.
+  if (tg && tg.close) tg.close();
+}
+
+async function submitRentLink() {
+  const input = document.getElementById("rent-link-input");
+  const errorEl = document.getElementById("rent-link-error");
+  const btn = document.getElementById("rent-link-btn");
+  if (!input) return;
+
+  const link = input.value.trim();
+  errorEl.classList.add("hidden");
+  if (!link) { errorEl.textContent = t("ao_err_empty"); errorEl.classList.remove("hidden"); return; }
+
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) return;
+
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
+
+  try {
+    const res = await fetch(base + "/public/submit_rent_link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, link: link }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      // Реальный успех от backend, а не таймер — показываем экран успеха.
+      document.getElementById("success-item").textContent = data.item_name || "";
+      document.getElementById("success-recipient").textContent = "";
+      document.getElementById("success-price").textContent = "";
+      document.getElementById("order-success-screen").classList.remove("hidden");
+      document.querySelector("#order-success-screen h2").textContent = t("ao_connected");
+      refreshActiveOrder();
+    } else if (data.error === "bad_link") {
+      errorEl.textContent = t("ao_err_bad_link"); errorEl.classList.remove("hidden");
+    } else {
+      errorEl.textContent = t("ao_err_connect"); errorEl.classList.remove("hidden");
+    }
+  } catch (e) {
+    errorEl.textContent = t("ao_err_network"); errorEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prev;
+  }
+}
+
+refreshActiveOrder();

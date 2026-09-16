@@ -185,6 +185,10 @@
     <span id="live-feed-text" class="truncate transition-opacity duration-300"></span>
   </div>
 
+  <!-- Активный заказ: виден со всех вкладок, не даёт клиенту потеряться
+       после перезахода в мини-апп. Наполняется реальным статусом из БД. -->
+  <div id="active-order-bar" class="hidden px-4 pt-3"></div>
+
   <!-- ================= ASOSIY ================= -->
   <div id="view-asosiy" class="block">
     <div class="flex overflow-x-auto gap-2 px-4 py-3.5 scrollbar-hide">
@@ -220,6 +224,14 @@
         <p class="text-[11.5px] text-gray-400 leading-relaxed" id="rent-terms-text">...</p>
       </div>
     </div>
+
+    <!-- Как работает аренда: свёрнуто по умолчанию, чтобы не мешать
+         постоянным клиентам, но новичок сразу видит кнопку и всё понимает -->
+    <button onclick="toggleRentHowto()" class="press w-full glass-card rounded-2xl px-4 py-3 mb-3 flex items-center justify-between">
+      <span class="text-[12.5px] font-semibold text-white" data-i18n="howto_title">🎁 Ijara qanday ishlaydi?</span>
+      <span id="howto-arrow" class="text-gray-500 text-xs transition-transform">▼</span>
+    </button>
+    <div id="rent-howto" class="hidden mb-3 space-y-2"></div>
 
     <div class="flex justify-between items-center gap-2 mb-3">
       <button id="rent-collection-btn" class="press flex items-center gap-1.5 pill rounded-xl px-3 py-2 text-xs">
