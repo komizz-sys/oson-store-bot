@@ -273,13 +273,14 @@ async def confirm_order(call: CallbackQuery, state: FSMContext):
         pay_amount = data["price"]
         amount_note = ""
 
+    lang = await get_user_language(call.from_user.id)
     await call.message.edit_text(
-        f"✅ Заказ #{order_id} создан на сумму <b>{format_uzs(data['price'])}</b>.\n\n"
-        f"Переведите сумму на карту:\n"
-        f"<code>{config.PAYMENT_CARD_NUMBER}</code>\n"
-        f"Получатель: {config.PAYMENT_CARD_HOLDER}"
-        f"{amount_note}\n\n"
-        "После оплаты пришлите сюда скриншот/чек — заказ уйдёт на проверку админу.",
+        t(lang, "order_created").format(order_id=order_id, price=format_uzs(data["price"]))
+        + t(lang, "order_pay_card")
+        + f"<code>{config.PAYMENT_CARD_NUMBER}</code>\n"
+        + f"{t(lang, 'order_pay_receiver')}: {config.PAYMENT_CARD_HOLDER}"
+        + f"{amount_note}\n"
+        + t(lang, "order_pay_hint"),
         reply_markup=payment_methods_kb(),
     )
     await call.answer()

@@ -84,7 +84,7 @@ const I18N = {
     ao_link_send: "Havolani yuborish", ao_watch_tutorial: "Tutorialni ko'rish (botda)",
     ao_connected: "Sovg'a profilingizga ulandi!",
     ao_err_empty: "Havolani kiriting", ao_err_bad_link: "Havola noto'g'ri. U tc:// bilan boshlanishi kerak.",
-    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.",
+    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.", ao_cancel: "Buyurtmani bekor qilish", ao_cancel_confirm: "Buyurtma bekor qilinsinmi?",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
     order_success_title: "Buyurtma muvaffaqiyatli qabul qilindi", order_success_hint: "Tez orada tasdiqlaymiz — natija shu botda yoziladi.",
@@ -125,7 +125,7 @@ const I18N = {
     ao_link_send: "Отправить ссылку", ao_watch_tutorial: "Посмотреть инструкцию (в боте)",
     ao_connected: "Подарок подключён к профилю!",
     ao_err_empty: "Введите ссылку", ao_err_bad_link: "Неверная ссылка. Она должна начинаться с tc://",
-    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.",
+    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.", ao_cancel: "Отменить заказ", ao_cancel_confirm: "Отменить заказ?",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
     order_success_title: "Заказ успешно оформлен", order_success_hint: "Скоро подтвердим — результат придёт в этот же чат.",
@@ -166,7 +166,7 @@ const I18N = {
     ao_link_send: "Send link", ao_watch_tutorial: "Watch tutorial (in bot)",
     ao_connected: "Gift connected to your profile!",
     ao_err_empty: "Enter the link", ao_err_bad_link: "Invalid link. It should start with tc://",
-    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.",
+    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.", ao_cancel: "Cancel order", ao_cancel_confirm: "Cancel this order?",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
     order_success_title: "Order placed successfully", order_success_hint: "We'll confirm soon — the result will be posted in this chat.",
@@ -990,12 +990,28 @@ async function submitOrder(payload) {
   }
 }
 
+function launchSuccessConfetti() {
+  const box = document.getElementById("success-confetti");
+  if (!box) return;
+  const colors = ["#10B981", "#D9B45B", "#2AABEE", "#8E8CD8", "#F0DFA0"];
+  let html = "";
+  for (let i = 0; i < 20; i++) {
+    const angle = (Math.PI * 2 * i) / 20 + Math.random() * 0.3;
+    const dist = 70 + Math.random() * 60;
+    html += '<span class="confetti-piece" style="--tx:' + Math.round(Math.cos(angle) * dist) +
+      'px; --ty:' + Math.round(Math.sin(angle) * dist) + 'px; --rot:' + Math.round((Math.random() - 0.5) * 520) +
+      'deg; background:' + colors[i % colors.length] + '; animation-delay:' + Math.round(Math.random() * 120) + 'ms;"></span>';
+  }
+  box.innerHTML = html;
+}
+
 function showOrderSuccess(payload) {
   document.getElementById("success-item").textContent = payload.item_name || "—";
   document.getElementById("success-recipient").textContent = payload.recipient || "—";
   document.getElementById("success-price").textContent = fmtUZS(payload.price || 0);
   closeModal();
   document.getElementById("order-success-screen").classList.remove("hidden");
+  launchSuccessConfetti();
 }
 
 function hideOrderSuccess() {
@@ -1440,6 +1456,10 @@ async function refreshActiveOrder() {
       '</div>'
     : "";
 
+  const cancelBtn = (active.status === "awaiting_payment" || active.status === "payment_review")
+    ? '<button onclick="cancelActiveOrder(' + active.id + ')" class="press mt-3 w-full py-2.5 rounded-xl pill text-[11px] font-medium text-gray-400">' + t("ao_cancel") + '</button>'
+    : "";
+
   bar.classList.remove("hidden");
   bar.innerHTML =
     '<div class="glass-card rounded-[20px] p-4 overlay-enter" style="border-color: rgba(42,171,238,0.35);">' +
@@ -1451,8 +1471,22 @@ async function refreshActiveOrder() {
         '</div>' +
         '<div class="text-[12px] font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(active.price_uzs) + '</div>' +
       '</div>' +
-      linkBlock +
+      linkBlock + cancelBtn +
     '</div>';
+}
+
+async function cancelActiveOrder(orderId) {
+  if (!confirm(t("ao_cancel_confirm"))) return;
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) return;
+  try {
+    await fetch(base + "/public/cancel_order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, order_id: orderId }),
+    });
+  } catch (e) { /* молча — просто обновим баннер ниже */ }
+  refreshActiveOrder();
 }
 
 function openBotForTutorial() {
@@ -1491,6 +1525,7 @@ async function submitRentLink() {
       document.getElementById("success-price").textContent = "";
       document.getElementById("order-success-screen").classList.remove("hidden");
       document.querySelector("#order-success-screen h2").textContent = t("ao_connected");
+      launchSuccessConfetti();
       refreshActiveOrder();
     } else if (data.error === "bad_link") {
       errorEl.textContent = t("ao_err_bad_link"); errorEl.classList.remove("hidden");

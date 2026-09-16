@@ -21,7 +21,7 @@ import re
 
 from database.db import (
     get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard,
-    get_pending_rent_link_order, set_rent_link,
+    get_pending_rent_link_order, set_rent_link, get_order, set_order_status,
 )
 from services import marketapp_api
 
@@ -199,6 +199,32 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "item_name": order["item_name"], "order_id": order["id"]})
 
 
+async def handle_cancel_order(request: web.Request) -> web.Response:
+    """
+    Отмена заказа самим клиентом — только своего и только пока он ещё
+    не оплачен (после подтверждения оплаты отменять нельзя: деньги уже
+    получены, тут нужен админ).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    order = await get_order(int(body.get("order_id") or 0))
+    # Проверяем владельца — иначе по чужому id можно было бы отменить чужой заказ
+    if not order or order["user_id"] != user["id"]:
+        return web.json_response({"error": "not_found"}, status=404)
+    if order["status"] not in ("awaiting_payment", "payment_review"):
+        return web.json_response({"error": "too_late"}, status=400)
+
+    await set_order_status(order["id"], "rejected", "Отменён клиентом")
+    return web.json_response({"ok": True})
+
+
 async def handle_leaderboard(request: web.Request) -> web.Response:
     period = request.query.get("period", "all")
     if period not in PERIOD_TO_SQL:
@@ -295,8 +321,9 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/create_order", handle_create_order)
     app.router.add_post("/public/active_order", handle_active_order)
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
+    app.router.add_post("/public/cancel_order", handle_cancel_order)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
-                 "/public/active_order", "/public/submit_rent_link"):
+                 "/public/active_order", "/public/submit_rent_link", "/public/cancel_order"):
         app.router.add_route("OPTIONS", path, handle_preflight)
 
     runner = web.AppRunner(app)

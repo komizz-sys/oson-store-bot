@@ -86,14 +86,15 @@ async def process_order(
         await state.update_data(**data, note=note)
         await state.set_state(OrderStates.confirming)
 
-        note_line = f"\nЗаметка: {note}" if note else ""
+        lang = await get_user_language(user_id)
+        note_line = f"\n{t(lang, 'order_check_note')}: {note}" if note else ""
         await bot.send_message(
             user_id,
-            f"Проверьте заказ:\n\n"
-            f"Товар: <b>{data['item_name']}</b>\n"
-            f"Получатель: {recipient}{note_line}\n"
-            f"Сумма к оплате: <b>{format_uzs(data['price'])}</b>\n\n"
-            "Всё верно?",
+            f"{t(lang, 'order_check_title')}\n\n"
+            f"{t(lang, 'order_check_item')}: <b>{data['item_name']}</b>\n"
+            f"{t(lang, 'order_check_recipient')}: {recipient}{note_line}\n"
+            f"{t(lang, 'order_check_total')}: <b>{format_uzs(data['price'])}</b>\n\n"
+            f"{t(lang, 'order_check_confirm')}",
             reply_markup=confirm_order_kb(),
         )
 
@@ -124,16 +125,17 @@ async def process_order(
         )
         await state.set_state(OrderStates.confirming)
 
-        note_line = f"\nЗаметка: {note}" if note else ""
+        lang = await get_user_language(user_id)
+        note_line = f"\n{t(lang, 'order_check_note')}: {note}" if note else ""
         await bot.send_message(
             user_id,
-            f"Проверьте заказ:\n\n"
-            f"Товар: <b>Аренда «{payload['item_name']}» на {days} дн.</b>\n"
-            f"Получатель: {recipient}{note_line}\n"
-            f"Комиссия сети: {format_uzs(calc['fee_total_uzs'])} "
-            f"(вернётся вам после аренды: {format_uzs(calc['fee_refundable_uzs'])})\n"
-            f"Сумма к оплате: <b>{format_uzs(calc['total_to_pay'])}</b>\n\n"
-            "Всё верно?",
+            f"{t(lang, 'order_check_title')}\n\n"
+            f"{t(lang, 'order_check_item')}: <b>{payload['item_name']} — {days} kun</b>\n"
+            f"{t(lang, 'order_check_recipient')}: {recipient}{note_line}\n"
+            f"{t(lang, 'order_check_fee')}: {format_uzs(calc['fee_total_uzs'])} "
+            f"({format_uzs(calc['fee_refundable_uzs'])} — {t(lang, 'order_check_fee_refund')})\n"
+            f"{t(lang, 'order_check_total')}: <b>{format_uzs(calc['total_to_pay'])}</b>\n\n"
+            f"{t(lang, 'order_check_confirm')}",
             reply_markup=confirm_order_kb(),
         )
 

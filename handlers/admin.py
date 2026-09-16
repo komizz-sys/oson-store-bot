@@ -422,6 +422,13 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
         except Exception as e:
             print(f"Ошибка при отправке текста для заказа {order_id}: {e}")
 
+    # Мягкая допродажа смежной категории (купил Stars -> предлагаем Premium и т.д.)
+    try:
+        from services.upsell import send_upsell
+        await send_upsell(bot, order["user_id"], order["category"], lang)
+    except Exception:
+        pass  # апсейл не критичен — не мешаем основному потоку оплаты
+
     # Выполнение в зависимости от категории
     if order["category"] == "stars":
         await try_auto_fulfill_stars(bot, order)

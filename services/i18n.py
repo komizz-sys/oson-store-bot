@@ -67,6 +67,18 @@ TRANSLATIONS = {
             "❌ Buyurtma #{order_id} bo'yicha to'lov tasdiqlanmadi.\n"
             "Xato deb hisoblasangiz — operator bilan bog'laning."
         ),
+        "order_check_title": "Buyurtmani tekshiring:",
+        "order_check_item": "Mahsulot",
+        "order_check_recipient": "Qabul qiluvchi",
+        "order_check_note": "Izoh",
+        "order_check_fee": "Tarmoq komissiyasi",
+        "order_check_fee_refund": "ijara tugagach qaytariladi",
+        "order_check_total": "To'lov summasi",
+        "order_check_confirm": "Hammasi to'g'rimi?",
+        "order_created": "✅ #{order_id} raqamli buyurtma <b>{price}</b> summasiga yaratildi.\n\n",
+        "order_pay_card": "Summani kartaga o'tkazing:\n",
+        "order_pay_receiver": "Qabul qiluvchi",
+        "order_pay_hint": "\nTo'lovdan so'ng shu yerga skrinshot/chek yuboring — buyurtma admin tekshiruviga o'tadi.",
         "payment_confirmed": "✅ Buyurtma #{order_id} bo'yicha to'lov tasdiqlandi! Bajarishga kirishyapmiz.",
     },
     "ru": {
@@ -120,6 +132,18 @@ TRANSLATIONS = {
             "❌ Оплата по заказу #{order_id} не подтверждена.\n"
             "Если считаете это ошибкой — напишите оператору."
         ),
+        "order_check_title": "Проверьте заказ:",
+        "order_check_item": "Товар",
+        "order_check_recipient": "Получатель",
+        "order_check_note": "Заметка",
+        "order_check_fee": "Комиссия сети",
+        "order_check_fee_refund": "вернётся вам после аренды",
+        "order_check_total": "Сумма к оплате",
+        "order_check_confirm": "Всё верно?",
+        "order_created": "✅ Заказ #{order_id} создан на сумму <b>{price}</b>.\n\n",
+        "order_pay_card": "Переведите сумму на карту:\n",
+        "order_pay_receiver": "Получатель",
+        "order_pay_hint": "\nПосле оплаты пришлите сюда скриншот/чек — заказ уйдёт на проверку админу.",
         "payment_confirmed": "✅ Оплата по заказу #{order_id} подтверждена! Приступаем к выполнению.",
     },
     "en": {
@@ -173,6 +197,18 @@ TRANSLATIONS = {
             "❌ Payment for order #{order_id} was not confirmed.\n"
             "If you think this is a mistake — contact the operator."
         ),
+        "order_check_title": "Check your order:",
+        "order_check_item": "Item",
+        "order_check_recipient": "Recipient",
+        "order_check_note": "Note",
+        "order_check_fee": "Network fee",
+        "order_check_fee_refund": "refunded after the rental ends",
+        "order_check_total": "Total to pay",
+        "order_check_confirm": "Is everything correct?",
+        "order_created": "✅ Order #{order_id} created for <b>{price}</b>.\n\n",
+        "order_pay_card": "Transfer the amount to the card:\n",
+        "order_pay_receiver": "Recipient",
+        "order_pay_hint": "\nAfter payment, send the receipt screenshot here — the order goes to admin review.",
         "payment_confirmed": "✅ Payment for order #{order_id} confirmed! We're starting fulfillment.",
     },
 }

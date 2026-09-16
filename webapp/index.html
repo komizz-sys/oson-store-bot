@@ -83,6 +83,19 @@
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes successPop {
+      0% { transform: scale(0.3); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes drawCheck { to { stroke-dashoffset: 0; } }
+    /* Пульсирующее кольцо вокруг загрузчика — показывает, что процесс идёт,
+       без фейкового процента (backend его не отдаёт) */
+    @keyframes pulseRing {
+      0% { transform: scale(0.85); opacity: 0.7; }
+      70% { transform: scale(1.3); opacity: 0; }
+      100% { transform: scale(1.3); opacity: 0; }
+    }
+    .pulse-ring { animation: pulseRing 1.8s cubic-bezier(.3,0,.5,1) infinite; }
 
     /* Салют для 1-го места в рейтинге */
     @keyframes confettiBurst {
@@ -420,8 +433,14 @@
 
   <!-- ================= ORDER SUCCESS (не закрывает WebApp) ================= -->
   <div id="order-success-screen" class="fixed inset-0 bg-background z-50 hidden overlay-enter flex flex-col items-center justify-center p-6 text-center">
-    <div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mb-5" style="animation: sheetUp .4s cubic-bezier(.2,.9,.25,1) both;">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="relative mb-5">
+      <div id="success-confetti" class="absolute inset-0"></div>
+      <div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center relative" style="animation: successPop .5s cubic-bezier(.2,1.4,.4,1) both; box-shadow: 0 0 36px -4px rgba(16,185,129,0.6);">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+          <path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                stroke-dasharray="26" stroke-dashoffset="26" style="animation: drawCheck .4s ease-out .25s forwards;"/>
+        </svg>
+      </div>
     </div>
     <h2 class="text-[19px] font-bold mb-1" data-i18n="order_success_title">Buyurtma muvaffaqiyatli qabul qilindi</h2>
     <p class="text-[12px] text-gray-400 mb-5" data-i18n="order_success_hint">Tez orada tasdiqlaymiz — natija shu botda yoziladi.</p>

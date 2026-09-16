@@ -78,6 +78,11 @@ async def main():
     # настроен через ANALYTICS_API_SECRET, просто ничего не делает
     await start_stats_server(bot, dp.storage)
 
+    # Напоминания о продлении Premium (раз в 6 часов проверяет подписки,
+    # которым скоро месяц, и шлёт "заканчивается завтра")
+    from services.premium_reminder import premium_reminder_loop
+    asyncio.create_task(premium_reminder_loop(bot))
+
     if config.UNIQUE_AMOUNT_ENABLED:
         asyncio.create_task(_expire_stale_orders_loop(bot))
 

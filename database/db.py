@@ -72,6 +72,7 @@ async def init_db():
             "ALTER TABLE orders ADD COLUMN content_text TEXT",
             "ALTER TABLE orders ADD COLUMN recipient_user_id INTEGER",
             "ALTER TABLE orders ADD COLUMN rent_link TEXT",
+            "ALTER TABLE orders ADD COLUMN reminder_sent INTEGER DEFAULT 0",
             "ALTER TABLE orders ADD COLUMN expected_amount_uzs INTEGER",
         ):
             try:
@@ -445,3 +446,25 @@ async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
         ) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+
+# ---- Напоминания о продлении Premium (см. services/premium_reminder.py) ----
+
+async def get_premium_orders_due_for_reminder() -> list[dict]:
+    """Заказы Premium 30-дневной давности, которым ещё не слали напоминание."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT * FROM orders
+               WHERE category = 'premium'
+                 AND status IN ('paid', 'fulfilling', 'completed')
+                 AND (reminder_sent IS NULL OR reminder_sent = 0)
+                 AND date(created_at) <= date('now', '-29 day')"""
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def mark_reminder_sent(order_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("UPDATE orders SET reminder_sent = 1 WHERE id = ?", (order_id,))
+        await db.commit()
