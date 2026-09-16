@@ -82,6 +82,7 @@
       to { transform: translateY(28px); opacity: 0; }
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
     /* Салют для 1-го места в рейтинге */
     @keyframes confettiBurst {
@@ -403,6 +404,25 @@
       <button onclick="sendPaymentInfo()" class="w-full py-4 rounded-2xl btn-primary press font-semibold text-white text-[15px] mb-2" data-i18n="modal_paid">To'ladim</button>
       <button onclick="closeModal()" class="w-full py-4 rounded-2xl pill press font-semibold text-gray-300 text-[15px]" data-i18n="modal_cancel">Bekor qilish</button>
     </div>
+  </div>
+
+  <!-- ================= ORDER SUCCESS (не закрывает WebApp) ================= -->
+  <div id="order-success-screen" class="fixed inset-0 bg-background z-50 hidden overlay-enter flex flex-col items-center justify-center p-6 text-center">
+    <div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center mb-5" style="animation: sheetUp .4s cubic-bezier(.2,.9,.25,1) both;">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <h2 class="text-[19px] font-bold mb-1" data-i18n="order_success_title">Buyurtma muvaffaqiyatli qabul qilindi</h2>
+    <p class="text-[12px] text-gray-400 mb-5" data-i18n="order_success_hint">Tez orada tasdiqlaymiz — natija shu botda yoziladi.</p>
+
+    <div class="glass-card rounded-[20px] p-4 w-full max-w-xs text-left space-y-2 mb-6">
+      <div class="flex justify-between text-xs"><span class="text-gray-400" data-i18n="order_success_item">Товар</span><span id="success-item" class="font-semibold text-white text-right ml-2">—</span></div>
+      <div class="flex justify-between text-xs"><span class="text-gray-400" data-i18n="order_success_recipient">Получатель</span><span id="success-recipient" class="font-semibold text-white">—</span></div>
+      <div class="flex justify-between text-xs pt-2 border-t border-white/[0.08]"><span class="text-gray-400 font-semibold" data-i18n="order_success_total">Сумма</span><span id="success-price" class="font-bold text-neon-yellow">—</span></div>
+    </div>
+
+    <button onclick="successGoTarix()" class="w-full max-w-xs py-3.5 rounded-2xl btn-primary press font-semibold text-white text-sm mb-2.5" data-i18n="order_success_history">Tarixni ko'rish</button>
+    <button onclick="successBuyMore()" class="w-full max-w-xs py-3.5 rounded-2xl pill press font-semibold text-sm mb-2.5" data-i18n="order_success_more">Yana xarid qilish</button>
+    <button onclick="successGoHome()" class="w-full max-w-xs py-3 text-gray-400 text-xs" data-i18n="order_success_home">Asosiy sahifa</button>
   </div>
 
 <script src="app.js"></script>

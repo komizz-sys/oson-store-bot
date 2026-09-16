@@ -75,9 +75,12 @@ const I18N = {
     status_fulfilling: "Bajarilmoqda", status_completed: "Bajarildi", status_rejected: "Bekor qilindi",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Sovg'a", cat_nft_rent: "\ud83d\uddbc Ijara",
     top_period_today: "Bugun", top_period_week: "Hafta", top_period_month: "Oy", top_period_all: "Hammasi",
-    top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.", badge_popular: "Mashhur",
+    top_orders_suffix: "buyurtma", top_you: "Siz", top_empty: "Bu davrda hali xaridlar yo'q.", badge_popular: "Mashhur", per_star: "so'm / yulduz", profile_no_purchases: "Birinchi xaridni amalga oshiring 🚀",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
+    order_success_title: "Buyurtma muvaffaqiyatli qabul qilindi", order_success_hint: "Tez orada tasdiqlaymiz — natija shu botda yoziladi.",
+    order_success_item: "Mahsulot", order_success_recipient: "Qabul qiluvchi", order_success_total: "Summa",
+    order_success_history: "Tarixni ko'rish", order_success_more: "Yana xarid qilish", order_success_home: "Asosiy sahifa",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -104,9 +107,12 @@ const I18N = {
     status_fulfilling: "Выполняется", status_completed: "Выполнено", status_rejected: "Отменено",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Подарок", cat_nft_rent: "\ud83d\uddbc Аренда",
     top_period_today: "Сегодня", top_period_week: "Неделя", top_period_month: "Месяц", top_period_all: "Всё время",
-    top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.", badge_popular: "Популярный",
+    top_orders_suffix: "заказ(ов)", top_you: "Вы", top_empty: "За этот период покупок ещё не было.", badge_popular: "Популярный", per_star: "сум / звезда", profile_no_purchases: "Сделайте первую покупку 🚀",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
+    order_success_title: "Заказ успешно оформлен", order_success_hint: "Скоро подтвердим — результат придёт в этот же чат.",
+    order_success_item: "Товар", order_success_recipient: "Получатель", order_success_total: "Сумма",
+    order_success_history: "Смотреть историю", order_success_more: "Купить ещё", order_success_home: "На главную",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -133,9 +139,12 @@ const I18N = {
     status_fulfilling: "In progress", status_completed: "Completed", status_rejected: "Cancelled",
     cat_stars: "\u2b50 Stars", cat_premium: "\ud83d\udc8e Premium", cat_simple_gift: "\ud83c\udf81 Gift", cat_nft_rent: "\ud83d\uddbc Rent",
     top_period_today: "Today", top_period_week: "Week", top_period_month: "Month", top_period_all: "All time",
-    top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.", badge_popular: "Popular",
+    top_orders_suffix: "order(s)", top_you: "You", top_empty: "No purchases in this period yet.", badge_popular: "Popular", per_star: "so'm / star", profile_no_purchases: "Make your first purchase 🚀",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
+    order_success_title: "Order placed successfully", order_success_hint: "We'll confirm soon — the result will be posted in this chat.",
+    order_success_item: "Item", order_success_recipient: "Recipient", order_success_total: "Total",
+    order_success_history: "View history", order_success_more: "Buy more", order_success_home: "Home",
   },
 };
 
@@ -230,44 +239,70 @@ function pickGiftEmoji(name) {
 
 async function renderItems() {
   const grid = document.getElementById("products-grid");
+  // Stars — компактные карточки с цифрой, помещается 3 в ряд.
+  // Gift — картинка главный герой, ей нужно место: 2 в ряд.
+  grid.className = currentCategory === "stars"
+    ? "p-4 grid grid-cols-3 gap-3 max-w-sm mx-auto"
+    : "p-4 grid grid-cols-2 gap-3 max-w-sm mx-auto";
 
   if (currentCategory === "premium") { await renderPremiumList(); return; }
   document.getElementById("premium-list").classList.add("hidden");
   grid.classList.remove("hidden");
 
-  grid.innerHTML = skeletonHTML(6, "h-24");
+  grid.innerHTML = skeletonHTML(6, currentCategory === "stars" ? "h-[104px]" : "h-[168px]");
   let items;
   try { items = await loadCatalog(currentCategory); }
-  catch (e) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  catch (e) { grid.innerHTML = '<p class="col-span-full text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
-  if (!items.length) { grid.innerHTML = '<p class="col-span-3 text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
+  if (!items.length) { grid.innerHTML = '<p class="col-span-full text-center text-xs text-gray-500 py-8">' + t("empty") + '</p>'; return; }
 
   const customCardHTML = currentCategory === "stars"
-    ? '<div id="stars-custom-card" class="glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer" style="border-style: dashed;">' +
-        '<div class="text-3xl my-2">✏️</div>' +
-        '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + t("custom_amount") + '</div>' +
-        '<div class="text-[10px] font-bold text-gray-500">' + t("custom_amount_hint") + '</div>' +
+    ? '<div id="stars-custom-card" class="glass-card press rounded-[20px] p-3 flex flex-col items-center justify-center text-center cursor-pointer min-h-[104px]" style="border-style: dashed;">' +
+        '<div class="text-2xl">✏️</div>' +
+        '<div class="text-[10px] text-gray-300 mt-1.5 leading-tight">' + t("custom_amount") + '</div>' +
+        '<div class="text-[9px] text-gray-500 mt-0.5">' + t("custom_amount_hint") + '</div>' +
       '</div>'
     : "";
 
   grid.innerHTML = items.map(function(it, i) {
-    // БАГ БЫЛ ЗДЕСЬ: карточка в сетке всегда рисовала только эмодзи (it.emoji),
-    // even когда у товара есть реальное фото (it.image) — картинку показывала
-    // только модалка после тапа. Из-за этого добавленные через /addgift фото
-    // подарков не появлялись там, где их реально видит покупатель — в каталоге.
-    const iconHTML = it.image
-      ? '<img src="' + it.image + '" loading="lazy" class="w-14 h-14 my-1 rounded-2xl object-cover animated-gift" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'block\';" />' +
-        '<div class="text-3xl my-2 animated-gift" style="display:none">' + it.emoji + '</div>'
-      : '<div class="text-3xl my-2 animated-gift">' + it.emoji + '</div>';
     const isPopularStars = currentCategory === "stars" && it.raw && it.raw.amount === 1000;
     const popularBadge = isPopularStars
-      ? '<span class="badge-popular absolute top-1.5 right-1.5 pill-gold text-[8px] font-bold px-1.5 py-0.5 rounded-md leading-none">' + t("badge_popular") + '</span>'
+      ? '<span class="badge-popular absolute -top-1.5 right-1.5 pill-gold text-[8px] font-bold px-2 py-0.5 rounded-full leading-none z-10">' + t("badge_popular") + '</span>'
       : "";
-    return '<div data-i="' + i + '" class="product-card glass-card press rounded-[20px] p-3 flex flex-col items-center text-center cursor-pointer relative' + (isPopularStars ? " card-popular" : "") + '">' +
+    const cardBase = '<div data-i="' + i + '" class="product-card glass-card press rounded-[20px] cursor-pointer relative overflow-visible' + (isPopularStars ? " card-popular" : "") + '">';
+
+    // STARS: героем делаем само число, а не одинаковую жёлтую звезду —
+    // раньше 15 карточек выглядели идентично, различал только мелкий текст.
+    // Плюс показываем цену за 1 звезду: чем больше пакет, тем она ниже,
+    // так человек видит выгоду и берёт пакет побольше.
+    if (currentCategory === "stars") {
+      const amount = it.raw.amount;
+      const perStar = Math.round(it.price / amount);
+      return cardBase +
+        popularBadge +
+        '<div class="p-3 flex flex-col items-center text-center">' +
+          '<div class="flex items-baseline gap-0.5 mt-1">' +
+            '<span class="text-[22px] font-black text-white leading-none tracking-tight">' + amount.toLocaleString("ru-RU").replace(/,/g, " ") + '</span>' +
+            '<span class="text-[11px]">⭐️</span>' +
+          '</div>' +
+          '<div class="text-[11px] font-bold text-neon-yellow mt-2">' + fmtUZS(it.price) + '</div>' +
+          '<div class="text-[9px] text-gray-500 mt-0.5">' + perStar + " " + t("per_star") + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    // GIFT: картинка — главный герой, ей отдаём всю ширину карточки.
+    const iconHTML = it.image
+      ? '<img src="' + it.image + '" loading="lazy" class="w-full h-full object-cover animated-gift" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';" />' +
+        '<div class="absolute inset-0 hidden items-center justify-center text-4xl animated-gift">' + it.emoji + '</div>'
+      : '<div class="absolute inset-0 flex items-center justify-center text-4xl animated-gift">' + it.emoji + '</div>';
+    return cardBase +
       popularBadge +
-      iconHTML +
-      '<div class="text-[10px] text-gray-300 mt-1 mb-1 leading-tight h-6 overflow-hidden">' + it.title + '</div>' +
-      '<div class="text-[10px] font-bold text-neon-yellow">' + fmtUZS(it.price) + '</div>' +
+      '<div class="relative w-full aspect-square rounded-t-[20px] overflow-hidden" style="background: radial-gradient(circle at 50% 35%, rgba(255,255,255,0.07), transparent 70%);">' + iconHTML + '</div>' +
+      '<div class="px-2 py-2.5 text-center">' +
+        '<div class="text-[10px] text-gray-400 leading-tight">' + it.title + '</div>' +
+        '<div class="text-[11px] font-bold text-neon-yellow mt-1">' + fmtUZS(it.price) + '</div>' +
+      '</div>' +
     '</div>';
   }).join("") + customCardHTML;
 
@@ -501,14 +536,13 @@ async function renderPremiumList() {
       return '<div data-i="' + i + '" class="premium-option press flex items-center justify-between gap-3 rounded-2xl p-4 cursor-pointer border relative ' +
         (selected ? "bg-neon-blue/10 border-neon-blue/50" : (isPopular ? "bg-white/[0.04] card-popular" : "bg-white/[0.04] border-white/[0.08]")) + '">' +
         popularBadge +
-        '<div class="flex items-center gap-3">' +
-          '<span class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ' + (selected ? "border-neon-blue" : "border-gray-500") + '">' +
+        '<div class="flex items-center gap-3 min-w-0">' +
+          '<span class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ' + (selected ? "border-neon-blue" : "border-gray-600") + '">' +
             (selected ? '<span class="w-2.5 h-2.5 rounded-full bg-neon-blue"></span>' : "") +
           '</span>' +
-          '<span class="text-xl">👑</span>' +
-          '<span class="text-sm font-semibold text-white">' + it.title + '</span>' +
+          '<span class="text-[13.5px] font-semibold text-white leading-tight">' + it.title + '</span>' +
         '</div>' +
-        '<span class="text-sm font-bold text-neon-yellow">' + fmtUZS(it.price) + '</span>' +
+        '<span class="text-[13.5px] font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(it.price) + '</span>' +
       '</div>';
     }).join("");
 
@@ -814,7 +848,13 @@ async function initSupportInfo() {
 }
 
 /* ---------------- Отправка заказа боту ---------------- */
+// Защита от двойного заказа: пока предыдущий запрос ещё летит на сервер,
+// повторные нажатия "To'ladim" игнорируются. Без этого двойной тап (частая
+// вещь на телефоне, особенно при медленном интернете) создавал ДВА заказа.
+let orderInFlight = false;
+
 function sendPaymentInfo() {
+  if (orderInFlight) return;
   const errorEl = document.getElementById("modal-error");
   let friendUsername = document.getElementById("gift-username").value.trim();
 
@@ -869,18 +909,30 @@ function sendPaymentInfo() {
 
 async function submitOrder(payload) {
   const errorEl = document.getElementById("modal-error");
+  const payBtn = document.querySelector('[onclick="sendPaymentInfo()"]');
   const base = await getShopApiUrl();
 
   if (!base || !tg || !tg.initData) {
+    orderInFlight = false;
     if (tg && tg.sendData) {
       // Резервный путь на случай, если публичный API ещё не настроен
       // (SHOP_API_URL пустой) — старый способ хотя бы не роняет заказ совсем.
+      // Telegram сам закрывает WebApp после sendData() — это его поведение,
+      // мы это не контролируем.
       tg.sendData(JSON.stringify(payload));
       tg.close();
     } else {
       alert("DEMO (Telegram ichida ochish kerak): " + JSON.stringify(payload, null, 2));
     }
     return;
+  }
+
+  errorEl.classList.add("hidden");
+  orderInFlight = true;
+  const prevBtnHtml = payBtn ? payBtn.innerHTML : null;
+  if (payBtn) {
+    payBtn.disabled = true;
+    payBtn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
   }
 
   try {
@@ -894,11 +946,48 @@ async function submitOrder(payload) {
       errorEl.classList.remove("hidden");
       return;
     }
-    tg.close();
+    // БЫЛО: tg.close() — мини-апп закрывался, человек терял контекст покупки.
+    // Теперь показываем экран успеха ВНУТРИ мини-аппа данными, которые уже
+    // есть на клиенте (create_order ничего, кроме {ok:true}, не возвращает —
+    // не выдумываем несуществующий order_id/status от бэкенда).
+    showOrderSuccess(payload);
   } catch (e) {
     errorEl.textContent = "Server bilan bog'lanib bo'lmadi, qayta urinib ko'ring.";
     errorEl.classList.remove("hidden");
+  } finally {
+    orderInFlight = false;
+    if (payBtn) {
+      payBtn.disabled = false;
+      payBtn.innerHTML = prevBtnHtml;
+    }
   }
+}
+
+function showOrderSuccess(payload) {
+  document.getElementById("success-item").textContent = payload.item_name || "—";
+  document.getElementById("success-recipient").textContent = payload.recipient || "—";
+  document.getElementById("success-price").textContent = fmtUZS(payload.price || 0);
+  closeModal();
+  document.getElementById("order-success-screen").classList.remove("hidden");
+}
+
+function hideOrderSuccess() {
+  document.getElementById("order-success-screen").classList.add("hidden");
+}
+
+function successGoTarix() {
+  hideOrderSuccess();
+  switchTab("tarix");
+}
+
+function successBuyMore() {
+  hideOrderSuccess();
+  switchTab("asosiy");
+}
+
+function successGoHome() {
+  hideOrderSuccess();
+  switchTab("asosiy");
 }
 
 /* ---------------- Профиль / рефералка / условия аренды ---------------- */
@@ -1168,15 +1257,20 @@ async function renderProfileStats() {
     }).join("");
 
     box.classList.remove("hidden");
+    const hasPurchases = (stats.total_uzs || 0) > 0;
     box.innerHTML =
-      '<div class="flex justify-between items-center mb-2">' +
-        '<h3 class="text-xs font-bold text-gray-300">' + t("profile_stats_title") + '</h3>' +
-        (stats.rank ? '<span class="text-[10px] text-neon-yellow font-semibold">' + t("profile_stats_rank") + ': #' + stats.rank + '</span>' : '') +
+      // Крупная сумма как герой блока — раньше "Jami xarid" терялся мелким
+      // текстом в строке и выглядел пустым у новых клиентов.
+      '<div class="text-center pb-3">' +
+        '<div class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">' + t("profile_stats_total") + '</div>' +
+        '<div class="text-[26px] font-black text-white leading-none tracking-tight">' + fmtUZS(stats.total_uzs || 0) + '</div>' +
+        (stats.rank
+          ? '<div class="inline-flex items-center gap-1.5 mt-2.5 pill-gold px-3 py-1 rounded-full text-[10px] font-bold">' +
+              '<span>🏆</span><span>' + t("profile_stats_rank") + ' #' + stats.rank + '</span>' +
+            '</div>'
+          : '<div class="text-[11px] text-gray-500 mt-2">' + t("profile_no_purchases") + '</div>') +
       '</div>' +
-      catRows +
-      '<div class="flex justify-between items-center text-xs pt-2 mt-1 border-t border-white/[0.08]">' +
-        '<span class="font-bold text-white">' + t("profile_stats_total") + '</span>' +
-        '<span class="font-bold text-neon-blue">' + fmtUZS(stats.total_uzs || 0) + '</span></div>';
+      (hasPurchases ? '<div class="pt-3 border-t border-white/[0.08] space-y-0.5">' + catRows + '</div>' : '');
   } catch (e) {
     box.classList.add("hidden");
   }

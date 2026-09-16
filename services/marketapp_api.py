@@ -123,3 +123,24 @@ async def rent_pay(nft_address: str, duration_seconds: int, price_per_day_gram: 
         f"/v1/rent/{nft_address}/pay/",
         {"duration": duration_seconds, "price_per_day": price_per_day_gram},
     )
+
+
+async def rent_connect_tonconnect(nft_address: str, tonconnect_url: str) -> dict:
+    """
+    Подключение арендованного гифта к профилю клиента в Telegram (Fragment).
+    Раньше это делалось вручную: клиент присылал tc://-ссылку, админ шёл на
+    marketapp.org, вставлял её и жал Connect. Теперь то же самое делает бот.
+
+    tonconnect_url — та самая "tc://..." ссылка, которую клиент получает в
+    Telegram (Assign NFT to Telegram) и присылает нам.
+    -> произвольный JSON со статусом попытки подключения.
+    """
+    return await _post(
+        f"/v1/rent/{nft_address}/tonconnect/",
+        {"tonconnect_url": tonconnect_url},
+    )
+
+
+async def get_my_rented_nfts() -> dict:
+    """Список гифтов, которые мы сейчас арендуем — для проверки статуса."""
+    return await _get("/v1/rent/my-rented/")

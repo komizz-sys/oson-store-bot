@@ -29,12 +29,13 @@ async def try_auto_fulfill_stars(bot: Bot, order: dict) -> None:
         return
 
     links = build_ton_deeplinks(tx)
+    links_block = "\n".join(f"<code>{link}</code>" for link in links)
     text = (
         f"💳 Заказ #{order['id']} готов к оплате через кошелёк.\n"
         f"Товар: {order['item_name']}\n"
         f"Получатель: {order['recipient']}\n\n"
         f"Открой ссылку в Tonkeeper (или другом TON-кошельке) и подтверди перевод:\n"
-        + "\n".join(links)
+        + links_block
         + "\n\nПосле подтверждения в кошельке и проверки доставки — "
         "нажми «Заказ выполнен» под чеком этого заказа."
     )

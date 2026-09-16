@@ -260,11 +260,15 @@ async def start_rent_payment(bot: Bot, order: dict, nft_address: str,
         return
 
     links = build_ton_deeplinks(tx)
+    # <code> вместо голого текста — Telegram даёт скопировать ссылку одним
+    # тапом целиком, а не пытается автоматически превратить её в кликабельную
+    # (что иногда обрезает длинный payload с параметрами).
+    links_block = "\n".join(f"<code>{link}</code>" for link in links)
     text = (
         f"🖼 Заказ #{order['id']} — аренда «{order['item_name']}» на {days} дн.\n"
         f"Получатель: {order['recipient']}\n\n"
         f"⚠️ Подтверди оплату ИМЕННО тем кошельком, которым генерировал API-токен "
-        f"на marketapp.org:\n" + "\n".join(links) +
+        f"на marketapp.org:\n" + links_block +
         "\n\nПосле оплаты гифт появится во вкладке Rented на marketapp.org — "
         "передай его получателю и нажми «Заказ выполнен»."
     )

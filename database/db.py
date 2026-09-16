@@ -1,3 +1,4 @@
+import os
 import random
 
 import aiosqlite
@@ -51,6 +52,14 @@ CREATE TABLE IF NOT EXISTS support_messages (
 
 
 async def init_db():
+    # Папка под базу может не существовать — например, при первом запуске на
+    # свежесмонтированном Volume (/data) или если её нет в репозитории
+    # (git не хранит пустые папки). Без этого sqlite падает с
+    # "unable to open database file" и бот вообще не стартует.
+    db_dir = os.path.dirname(config.DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute(CREATE_USERS_TABLE)
         await db.execute(CREATE_ORDERS_TABLE)
