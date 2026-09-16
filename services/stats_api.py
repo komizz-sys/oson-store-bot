@@ -22,6 +22,7 @@ import re
 from database.db import (
     get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard,
     get_pending_rent_link_order, set_rent_link, get_order, set_order_status,
+    attach_payment_proof,
 )
 from services import marketapp_api
 
@@ -133,6 +134,10 @@ async def handle_active_order(request: web.Request) -> web.Response:
         and active["status"] == "paid"
         and not (active.get("rent_link") or "")
     )
+    # Реквизиты нужны, только пока клиент ещё не оплатил — чтобы он мог
+    # оплатить и приложить чек не выходя из витрины.
+    needs_payment = active["status"] == "awaiting_payment"
+
     return web.json_response({
         "active": {
             "id": active["id"],
@@ -141,6 +146,9 @@ async def handle_active_order(request: web.Request) -> web.Response:
             "price_uzs": active["price_uzs"],
             "status": active["status"],
             "needs_rent_link": needs_link,
+            "needs_payment": needs_payment,
+            "card_number": config.PAYMENT_CARD_NUMBER if needs_payment else None,
+            "card_holder": config.PAYMENT_CARD_HOLDER if needs_payment else None,
         }
     })
 
@@ -222,6 +230,77 @@ async def handle_cancel_order(request: web.Request) -> web.Response:
         return web.json_response({"error": "too_late"}, status=400)
 
     await set_order_status(order["id"], "rejected", "Отменён клиентом")
+    return web.json_response({"ok": True})
+
+
+async def handle_submit_receipt(request: web.Request) -> web.Response:
+    """
+    Приём чека об оплате ПРЯМО ИЗ ВИТРИНЫ (раньше только через чат бота).
+    Картинка приходит base64, мы отправляем её админу тем же способом и с
+    той же клавиатурой Подтвердить/Отклонить, что и чек из чата — дальше
+    весь процесс идёт по уже существующей логике, ничего не дублируем.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    order = await get_order(int(body.get("order_id") or 0))
+    # Владелец заказа — иначе по чужому id можно было бы подсунуть чужой чек
+    if not order or order["user_id"] != user["id"]:
+        return web.json_response({"error": "not_found"}, status=404)
+    if order["status"] not in ("awaiting_payment", "payment_review"):
+        return web.json_response({"error": "wrong_status"}, status=400)
+
+    image_b64 = body.get("image_base64") or ""
+    if not image_b64:
+        return web.json_response({"error": "no_image"}, status=400)
+
+    import base64
+    from aiogram.types import BufferedInputFile
+    from keyboards.admin_kb import admin_review_kb
+    from services.prices import format_uzs
+
+    try:
+        raw = base64.b64decode(image_b64)
+    except Exception:
+        return web.json_response({"error": "bad_image"}, status=400)
+    if len(raw) > 8 * 1024 * 1024:  # Telegram всё равно не примет больше
+        return web.json_response({"error": "too_big"}, status=400)
+
+    caption = (
+        f"🆕 <b>Новый чек по заказу #{order['id']}</b> (из мини-аппа)\n"
+        f"От: @{user.get('username') or user['id']} (id: {user['id']})\n"
+        f"Товар: {order['item_name']}\n"
+        f"Получатель: {order['recipient']}\n"
+        f"Сумма: {format_uzs(order['price_uzs'])}"
+    )
+
+    sent_any = False
+    for admin_id in config.ADMIN_IDS:
+        try:
+            msg = await _bot.send_photo(
+                admin_id,
+                BufferedInputFile(raw, filename=f"receipt_{order['id']}.jpg"),
+                caption=caption,
+                reply_markup=admin_review_kb(order["id"]),
+            )
+            if not sent_any and msg.photo:
+                # Сохраняем file_id, чтобы чек был виден в карточке заказа,
+                # как и при отправке через чат
+                await attach_payment_proof(order["id"], msg.photo[-1].file_id)
+            sent_any = True
+        except Exception:
+            pass
+
+    if not sent_any:
+        return web.json_response({"error": "send_failed"}, status=500)
+
+    await set_order_status(order["id"], "payment_review")
     return web.json_response({"ok": True})
 
 
@@ -322,8 +401,9 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/active_order", handle_active_order)
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
+    app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
-                 "/public/active_order", "/public/submit_rent_link", "/public/cancel_order"):
+                 "/public/active_order", "/public/submit_rent_link", "/public/cancel_order", "/public/submit_receipt"):
         app.router.add_route("OPTIONS", path, handle_preflight)
 
     runner = web.AppRunner(app)

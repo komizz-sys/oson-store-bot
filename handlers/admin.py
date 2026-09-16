@@ -79,6 +79,30 @@ async def get_file_id_wrong_type(message: Message):
     await message.answer("Это не видео. Пришли именно видеофайл (или /cancel).")
 
 
+@router.message(Command("cleargifts"))
+async def clear_gifts_cmd(message: Message):
+    """Убирает ВСЕ вручную добавленные подарки. Нужна отдельная команда,
+    потому что список живёт на персистентном Volume веб-сервиса — правка
+    файла в репозитории и редеплой его не затирают."""
+    if not is_admin(message.from_user.id):
+        return
+    if not config.WEBAPP_URL or not config.INTERNAL_PUSH_SECRET:
+        await message.answer("⚠️ Не настроен WEBAPP_URL или INTERNAL_PUSH_SECRET.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                f"{config.WEBAPP_URL}/internal/clear_gifts",
+                headers={"X-Internal-Secret": config.INTERNAL_PUSH_SECRET},
+            )
+        if r.status_code == 200:
+            await message.answer("✅ Вручную добавленные подарки удалены из каталога.")
+        else:
+            await message.answer(f"⚠️ Веб-сервис ответил {r.status_code}: {r.text}")
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось связаться с веб-сервисом: {e}")
+
+
 @router.message(Command("addgift"))
 async def add_gift_start(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):

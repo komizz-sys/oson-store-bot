@@ -45,13 +45,23 @@ def subscribe_gate_kb(lang: str | None = None) -> InlineKeyboardMarkup:
 
 def main_menu_kb(lang: str | None = None) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    # Магазин — отдельной широкой кнопкой сверху: это главный путь покупки,
+    # он должен бросаться в глаза раньше остальных пунктов.
+    if config.WEBAPP_URL:
+        b.button(text=t(lang, "menu_webapp"), web_app=WebAppInfo(url=config.WEBAPP_URL))
     b.button(text=t(lang, "menu_stars"), callback_data="menu:stars")
     b.button(text=t(lang, "menu_premium"), callback_data="menu:premium")
     b.button(text=t(lang, "menu_simple_gift"), callback_data="menu:simple_gift")
     b.button(text=t(lang, "menu_nft_rent"), callback_data="menu:nft_rent")
     b.button(text=t(lang, "menu_my_orders"), callback_data="menu:my_orders")
     b.button(text=t(lang, "menu_support"), callback_data="menu:support")
-    b.adjust(1)
+    b.button(text=t(lang, "menu_change_language"), callback_data="menu:change_language")
+    # Магазин — на всю ширину сверху, товары и разделы сеткой по два,
+    # смена языка — отдельной строкой внизу (используется реже остальных).
+    if config.WEBAPP_URL:
+        b.adjust(1, 2, 2, 2, 1)
+    else:
+        b.adjust(2, 2, 2, 1)
     return b.as_markup()
 
 

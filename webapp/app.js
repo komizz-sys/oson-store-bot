@@ -84,7 +84,7 @@ const I18N = {
     ao_link_send: "Havolani yuborish", ao_watch_tutorial: "Tutorialni ko'rish (botda)",
     ao_connected: "Sovg'a profilingizga ulandi!",
     ao_err_empty: "Havolani kiriting", ao_err_bad_link: "Havola noto'g'ri. U tc:// bilan boshlanishi kerak.",
-    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.", ao_cancel: "Buyurtmani bekor qilish", ao_cancel_confirm: "Buyurtma bekor qilinsinmi?",
+    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.", ao_cancel: "Buyurtmani bekor qilish", ao_cancel_confirm: "Buyurtma bekor qilinsinmi?", ao_pay_title: "To'lovni amalga oshiring", ao_pay_hint: "Kartaga summani o'tkazing va chek skrinshotini shu yerga yuklang.", ao_pay_upload: "Chek skrinshotini yuklash", ao_receipt_sent: "✅ Chek yuborildi! Admin tez orada tekshiradi.", ao_err_too_big: "Fayl juda katta (8 MB gacha).", ao_err_receipt: "Chekni yuborib bo'lmadi, qayta urinib ko'ring.",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
     order_success_title: "Buyurtma muvaffaqiyatli qabul qilindi", order_success_hint: "Tez orada tasdiqlaymiz — natija shu botda yoziladi.",
@@ -125,7 +125,7 @@ const I18N = {
     ao_link_send: "Отправить ссылку", ao_watch_tutorial: "Посмотреть инструкцию (в боте)",
     ao_connected: "Подарок подключён к профилю!",
     ao_err_empty: "Введите ссылку", ao_err_bad_link: "Неверная ссылка. Она должна начинаться с tc://",
-    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.", ao_cancel: "Отменить заказ", ao_cancel_confirm: "Отменить заказ?",
+    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.", ao_cancel: "Отменить заказ", ao_cancel_confirm: "Отменить заказ?", ao_pay_title: "Оплатите заказ", ao_pay_hint: "Переведите сумму на карту и загрузите сюда скриншот чека.", ao_pay_upload: "Загрузить скриншот чека", ao_receipt_sent: "✅ Чек отправлен! Админ скоро проверит.", ao_err_too_big: "Файл слишком большой (до 8 МБ).", ao_err_receipt: "Не удалось отправить чек, попробуйте ещё раз.",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
     order_success_title: "Заказ успешно оформлен", order_success_hint: "Скоро подтвердим — результат придёт в этот же чат.",
@@ -166,7 +166,7 @@ const I18N = {
     ao_link_send: "Send link", ao_watch_tutorial: "Watch tutorial (in bot)",
     ao_connected: "Gift connected to your profile!",
     ao_err_empty: "Enter the link", ao_err_bad_link: "Invalid link. It should start with tc://",
-    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.", ao_cancel: "Cancel order", ao_cancel_confirm: "Cancel this order?",
+    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.", ao_cancel: "Cancel order", ao_cancel_confirm: "Cancel this order?", ao_pay_title: "Pay for your order", ao_pay_hint: "Transfer the amount to the card and upload the receipt screenshot here.", ao_pay_upload: "Upload receipt screenshot", ao_receipt_sent: "✅ Receipt sent! The admin will check it shortly.", ao_err_too_big: "File is too large (max 8 MB).", ao_err_receipt: "Could not send the receipt, please try again.",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
     order_success_title: "Order placed successfully", order_success_hint: "We'll confirm soon — the result will be posted in this chat.",
@@ -1456,6 +1456,26 @@ async function refreshActiveOrder() {
       '</div>'
     : "";
 
+  // Оплата прямо в витрине: карта + загрузка чека, без ухода в чат бота
+  const payBlock = active.needs_payment
+    ? '<div class="mt-3 pt-3 border-t border-white/[0.08]">' +
+        '<div class="text-[12px] font-semibold text-white mb-2">💳 ' + t("ao_pay_title") + '</div>' +
+        '<div class="glass-card rounded-xl p-3 mb-2.5">' +
+          '<div class="text-[9px] text-gray-500 mb-0.5">' + t("modal_card_label") + '</div>' +
+          '<div class="text-[14px] font-mono font-bold text-white tracking-wider mb-1.5">' + (active.card_number || "—") + '</div>' +
+          '<div class="flex justify-between items-end">' +
+            '<div><div class="text-[9px] text-gray-500">' + t("modal_card_holder_label") + '</div>' +
+            '<div class="text-[11px]">' + (active.card_holder || "—") + '</div></div>' +
+            '<button onclick="copyActiveCard(\'' + (active.card_number || "") + '\')" class="press bg-neon-blue/15 text-neon-blue px-3 py-1.5 rounded-lg text-[10px] font-semibold">' + t("modal_copy") + '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="text-[11px] text-gray-400 mb-2 leading-snug">' + t("ao_pay_hint") + '</div>' +
+        '<input type="file" id="receipt-input" accept="image/*" class="hidden" onchange="submitReceipt(' + active.id + ')" />' +
+        '<button onclick="document.getElementById(\'receipt-input\').click()" id="receipt-btn" class="press w-full py-3 rounded-xl btn-primary font-semibold text-white text-[13px]">📎 ' + t("ao_pay_upload") + '</button>' +
+        '<p id="receipt-error" class="hidden text-red-400 text-[11px] mt-2"></p>' +
+      '</div>'
+    : "";
+
   const cancelBtn = (active.status === "awaiting_payment" || active.status === "payment_review")
     ? '<button onclick="cancelActiveOrder(' + active.id + ')" class="press mt-3 w-full py-2.5 rounded-xl pill text-[11px] font-medium text-gray-400">' + t("ao_cancel") + '</button>'
     : "";
@@ -1471,7 +1491,7 @@ async function refreshActiveOrder() {
         '</div>' +
         '<div class="text-[12px] font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(active.price_uzs) + '</div>' +
       '</div>' +
-      linkBlock + cancelBtn +
+      payBlock + linkBlock + cancelBtn +
     '</div>';
 }
 
@@ -1487,6 +1507,58 @@ async function cancelActiveOrder(orderId) {
     });
   } catch (e) { /* молча — просто обновим баннер ниже */ }
   refreshActiveOrder();
+}
+
+function copyActiveCard(number) {
+  navigator.clipboard.writeText(number);
+  if (tg && tg.showAlert) tg.showAlert(t("copied")); else alert(t("copied"));
+}
+
+async function submitReceipt(orderId) {
+  const input = document.getElementById("receipt-input");
+  const btn = document.getElementById("receipt-btn");
+  const errorEl = document.getElementById("receipt-error");
+  if (!input || !input.files || !input.files[0]) return;
+
+  const file = input.files[0];
+  errorEl.classList.add("hidden");
+  if (file.size > 8 * 1024 * 1024) {
+    errorEl.textContent = t("ao_err_too_big"); errorEl.classList.remove("hidden"); return;
+  }
+
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) return;
+
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
+
+  try {
+    const base64 = await new Promise(function(resolve, reject) {
+      const r = new FileReader();
+      r.onload = function() { resolve(String(r.result).split(",")[1]); };
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+    const res = await fetch(base + "/public/submit_receipt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, order_id: orderId, image_base64: base64 }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (tg && tg.showAlert) tg.showAlert(t("ao_receipt_sent")); else alert(t("ao_receipt_sent"));
+      refreshActiveOrder();
+    } else {
+      errorEl.textContent = t("ao_err_receipt"); errorEl.classList.remove("hidden");
+    }
+  } catch (e) {
+    errorEl.textContent = t("ao_err_network"); errorEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prev;
+    input.value = "";
+  }
 }
 
 function openBotForTutorial() {

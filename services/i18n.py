@@ -19,9 +19,15 @@ TRANSLATIONS = {
     "uz": {
         "choose_language": "Tilni tanlang:",
         "welcome": (
-            "👋 Xush kelibsiz!\n\n"
-            "Bu yerda ⭐ Telegram Stars, 💎 Telegram Premium sotib olishingiz "
-            "va 🖼 NFT-sovg'alarni ijaraga olishingiz mumkin. To'lov so'mda.\n\n"
+            "👋 Assalomu alaykum, {name}!\n\n"
+            "<blockquote>"
+            "<tg-emoji emoji-id='5375583215157280942'>⭐️</tg-emoji> <b>Telegram Stars</b> — tez va arzon\n"
+            "<tg-emoji emoji-id='5375333763456729352'>💎</tg-emoji> <b>Telegram Premium</b> — maxsus imkoniyatlar\n"
+            "🎁 <b>Sovg'alar</b> — do'stlar va yaqinlar uchun\n"
+            "<tg-emoji emoji-id='5150158575271674966'>🖼</tg-emoji> <b>NFT ijarasi</b> — profilingiz uchun noyob sovg'alar\n"
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Operator</b> — /operator, 24/7 yordam"
+            "</blockquote>\n"
+            "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> To'lov so'mda 🇺🇿\n\n"
             "Bo'limni tanlang:"
         ),
         "menu_webapp": "🛍 Do'konni ochish",
@@ -30,6 +36,7 @@ TRANSLATIONS = {
         "menu_simple_gift": "🎁 Oddiy sovg'alar",
         "menu_nft_rent": "🖼 NFT-sovg'a ijarasi",
         "menu_my_orders": "📦 Buyurtmalarim",
+        "menu_change_language": "🌐 Tilni o'zgartirish",
         "back": "⬅️ Orqaga",
         "stars_header": "⭐ Stars to'plamini tanlang:",
         "premium_header": "💎 Telegram Premium muddatini tanlang:",
@@ -49,6 +56,13 @@ TRANSLATIONS = {
         "support_prompt": "💬 Xabaringizni yozing — operator tez orada javob beradi:",
         "support_sent": "✅ Xabaringiz yuborildi. Operator tez orada javob beradi.",
         "menu_support": "💬 Yordam / Operator",
+        "operator_card": (
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Operator bilan bog'lanish</b>\n\n"
+            "Savol, muammo yoki buyurtma bo'yicha yordam kerakmi? "
+            "Operatorimiz yozing — tez orada javob beramiz.\n\n"
+            "\u2709\ufe0f {operator}"
+        ),
+        "operator_missing": "Hozircha operator ko'rsatilmagan. Iltimos, keyinroq urinib ko'ring.",
         "no_username_error": (
             "Sizda public username yo'q — Telegram sozlamalaridan o'rnating "
             "yoki boshqa @username ko'rsating."
@@ -84,9 +98,15 @@ TRANSLATIONS = {
     "ru": {
         "choose_language": "Выберите язык:",
         "welcome": (
-            "👋 Добро пожаловать!\n\n"
-            "Здесь можно купить ⭐ Telegram Stars, 💎 Telegram Premium "
-            "и арендовать 🖼 NFT-подарки. Оплата в узбекских сумах.\n\n"
+            "👋 Здравствуйте, {name}!\n\n"
+            "<blockquote>"
+            "<tg-emoji emoji-id='5375583215157280942'>⭐️</tg-emoji> <b>Telegram Stars</b> — быстро и выгодно\n"
+            "<tg-emoji emoji-id='5375333763456729352'>💎</tg-emoji> <b>Telegram Premium</b> — все возможности\n"
+            "🎁 <b>Подарки</b> — друзьям и близким\n"
+            "<tg-emoji emoji-id='5150158575271674966'>🖼</tg-emoji> <b>Аренда NFT</b> — редкие подарки для профиля\n"
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Оператор</b> — /operator, помощь 24/7"
+            "</blockquote>\n"
+            "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> Оплата в сумах 🇺🇿\n\n"
             "Выберите раздел:"
         ),
         "menu_webapp": "🛍 Открыть магазин",
@@ -95,6 +115,7 @@ TRANSLATIONS = {
         "menu_simple_gift": "🎁 Простые подарки",
         "menu_nft_rent": "🖼 Аренда NFT-подарков",
         "menu_my_orders": "📦 Мои заказы",
+        "menu_change_language": "🌐 Сменить язык",
         "back": "⬅️ Назад",
         "stars_header": "⭐ Выберите пакет звёзд:",
         "premium_header": "💎 Выберите срок Telegram Premium:",
@@ -114,6 +135,13 @@ TRANSLATIONS = {
         "support_prompt": "💬 Напишите ваше сообщение — оператор скоро ответит:",
         "support_sent": "✅ Сообщение отправлено. Оператор скоро ответит.",
         "menu_support": "💬 Поддержка / Оператор",
+        "operator_card": (
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Связаться с оператором</b>\n\n"
+            "Есть вопрос, проблема или нужна помощь по заказу? "
+            "Напишите нашему оператору — ответим быстро.\n\n"
+            "\u2709\ufe0f {operator}"
+        ),
+        "operator_missing": "Оператор пока не указан. Попробуйте чуть позже.",
         "no_username_error": (
             "У вас нет публичного username — установите в настройках Telegram "
             "или укажите другой @username."
@@ -149,9 +177,15 @@ TRANSLATIONS = {
     "en": {
         "choose_language": "Choose language:",
         "welcome": (
-            "👋 Welcome!\n\n"
-            "Here you can buy ⭐ Telegram Stars, 💎 Telegram Premium "
-            "and rent 🖼 NFT gifts. Payment in Uzbek som.\n\n"
+            "👋 Welcome, {name}!\n\n"
+            "<blockquote>"
+            "<tg-emoji emoji-id='5375583215157280942'>⭐️</tg-emoji> <b>Telegram Stars</b> — fast and cheap\n"
+            "<tg-emoji emoji-id='5375333763456729352'>💎</tg-emoji> <b>Telegram Premium</b> — all the perks\n"
+            "🎁 <b>Gifts</b> — for friends and loved ones\n"
+            "<tg-emoji emoji-id='5150158575271674966'>🖼</tg-emoji> <b>NFT rental</b> — rare gifts for your profile\n"
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Operator</b> — /operator, 24/7 support"
+            "</blockquote>\n"
+            "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> Payment in Uzbek som 🇺🇿\n\n"
             "Choose a section:"
         ),
         "menu_webapp": "🛍 Open shop",
@@ -160,6 +194,7 @@ TRANSLATIONS = {
         "menu_simple_gift": "🎁 Simple gifts",
         "menu_nft_rent": "🖼 NFT gift rental",
         "menu_my_orders": "📦 My orders",
+        "menu_change_language": "🌐 Change language",
         "back": "⬅️ Back",
         "stars_header": "⭐ Choose a Stars package:",
         "premium_header": "💎 Choose Telegram Premium duration:",
@@ -179,6 +214,13 @@ TRANSLATIONS = {
         "support_prompt": "💬 Write your message — an operator will reply soon:",
         "support_sent": "✅ Message sent. An operator will reply soon.",
         "menu_support": "💬 Support / Operator",
+        "operator_card": (
+            "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Contact the operator</b>\n\n"
+            "Got a question, an issue, or need help with an order? "
+            "Message our operator — we reply fast.\n\n"
+            "\u2709\ufe0f {operator}"
+        ),
+        "operator_missing": "No operator is set right now. Please try again later.",
         "no_username_error": (
             "You don't have a public username — set one in Telegram settings "
             "or specify a different @username."

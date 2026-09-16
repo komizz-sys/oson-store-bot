@@ -66,6 +66,16 @@ async def main():
     # защищённый API (/public/create_order, та же подпись initData, что и у
     # Tarix/TOP/Profil), а не через sendData(), так что Menu Button можно
     # спокойно включать — компактная кнопка "Открыть" у поля ввода.
+    # Список команд в меню "/" — чтобы /operator и /start были на виду
+    from aiogram.types import BotCommand
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="🛍 Do'kon / Магазин"),
+            BotCommand(command="operator", description="💬 Operator / Оператор"),
+        ])
+    except Exception:
+        pass
+
     from aiogram.types import MenuButtonWebApp, WebAppInfo
     try:
         await bot.set_chat_menu_button(

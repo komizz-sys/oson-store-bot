@@ -141,6 +141,22 @@ def _save_extra_gift(gift_id: str, star_count: int, price_uzs: int, sticker_emoj
         json.dump(items, f, ensure_ascii=False, indent=2)
 
 
+@app.post("/internal/clear_gifts")
+async def internal_clear_gifts(request: Request):
+    """
+    Очистка списка "снятых с продажи" подарков НА ПЕРСИСТЕНТНОМ ДИСКЕ.
+    Нужна потому, что extra_gifts.json живёт на Volume, а не в репозитории —
+    правка файла в git и редеплой его не затирают (так и задумано, иначе
+    добавленные подарки терялись бы при каждом деплое).
+    """
+    if not config.INTERNAL_PUSH_SECRET or request.headers.get("X-Internal-Secret") != config.INTERNAL_PUSH_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+    os.makedirs(config.PERSIST_DIR, exist_ok=True)
+    with open(EXTRA_GIFTS_PATH, "w", encoding="utf-8") as f:
+        json.dump([], f)
+    return {"ok": True}
+
+
 @app.post("/internal/add_gift")
 async def internal_add_gift(request: Request):
     """

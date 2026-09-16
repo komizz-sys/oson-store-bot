@@ -7,15 +7,39 @@
 """
 
 from aiogram import Router, F, Bot
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 import config
 from database.db import get_user_language, save_support_mapping, get_support_user
 from services.i18n import t
 
 router = Router()
+
+
+@router.message(Command("operator"))
+async def operator_cmd(message: Message):
+    """Быстрый способ связаться с оператором — отдельной командой, чтобы
+    не искать кнопку в меню."""
+    lang = await get_user_language(message.from_user.id)
+    handle = (config.OPERATOR_USERNAME or "").lstrip("@")
+    if not handle:
+        await message.answer(t(lang, "operator_missing"))
+        return
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=t(lang, "menu_support"), url=f"https://t.me/{handle}")
+    ]])
+    text = t(lang, "operator_card").format(operator=f"@{handle}")
+    try:
+        await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+    except Exception:
+        # Откат, если анимированные эмодзи вдруг не приняты (нет Premium)
+        import re
+        plain = re.sub(r"<tg-emoji emoji-id='\d+'>(.*?)</tg-emoji>", r"\1", text)
+        await message.answer(plain, reply_markup=kb, disable_web_page_preview=True)
 
 
 class SupportStates(StatesGroup):
