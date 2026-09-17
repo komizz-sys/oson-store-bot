@@ -14,19 +14,24 @@ API-токен на marketapp.org (это обязательное требов�
 - бот хранит СИД-ФРАЗУ кошелька в переменной окружения (TON_WALLET_MNEMONIC).
   Кто получит доступ к переменным Railway — получит и кошелёк. Поэтому сюда
   заводится ОТДЕЛЬНЫЙ «рабочий» кошелёк с небольшим остатком на текущие
-  закупки, а не основной;
+  закупки, а не основной. На Railway переменную стоит сделать Sealed —
+  запечатанное значение нельзя прочитать обратно даже из веб-интерфейса;
 - платёж уходит ТОЛЬКО за заказ, который уже оплачен клиентом (статус `paid`
-  в базе) — это проверяет вызывающий код;
+  в базе) — это проверяет services/ton_autopay.py;
 - на каждую транзакцию есть потолок (TON_AUTO_PAY_MAX_TON) и суточный лимит
   (TON_AUTO_PAY_DAILY_MAX_TON). Превышение — не платим, зовём админа;
 - каждая оплата пишется в таблицу ton_payments ДО отправки, с UNIQUE по
   (заказ, назначение) — второй раз за тот же заказ заплатить нельзя;
-- если что-то в этом модуле не сработало (нет библиотеки, нет сети, неверная
+- если что-то здесь не сработало (нет библиотеки, нет сети, неверная
   сид-фраза), магазин НЕ ломается: вызывающий код откатывается на старую
   схему с ручной ton://-ссылкой админу.
 
 Библиотека подписи (tonutils) импортируется ЛЕНИВО, внутри функций. Так бот
 запускается даже там, где её не поставили, — просто с выключенным автоплатежом.
+
+ВАЖНО про версии tonutils: в 2.x пакеты называются `tonutils.clients` и
+`tonutils.contracts` (в 0.x было `tonutils.client` / `tonutils.wallet`), а
+`transfer(amount=...)` принимает НАНОТОНЫ, а не TON. Код ниже написан под 2.x.
 """
 
 import base64
@@ -54,11 +59,11 @@ def _mnemonic_words() -> list[str]:
 def _wallet_class(version: str | None = None):
     """
     Класс кошелька нужной версии. Версия ВАЖНА: у одной сид-фразы адреса
-    v4R2 и V5R1 разные, и деньги лежат только на одном из них. Какая именно
-    версия у админа — видно командой /tonwallet, она показывает оба адреса
+    V5R1 и V4R2 разные, и деньги лежат только на одном из них. Какая именно
+    версия у админа — покажет команда /tonwallet: она выводит оба адреса
     с балансами.
     """
-    from tonutils.wallet import WalletV4R2, WalletV5R1
+    from tonutils.contracts import WalletV4R2, WalletV5R1
 
     v = (version or config.TON_WALLET_VERSION or "v5r1").lower().replace("_", "").replace("-", "")
     if v in ("v4r2", "v4"):
@@ -67,86 +72,82 @@ def _wallet_class(version: str | None = None):
         return WalletV5R1
     raise TonPayError(
         f"Неизвестная версия кошелька TON_WALLET_VERSION={version!r}. "
-        "Допустимо: v5r1 (современный Tonkeeper W5) или v4r2 (старый)."
+        "Допустимо: v5r1 (современный Tonkeeper W5) или v4r2 (более старый)."
     )
 
 
-def _client():
-    """
-    Клиент к сети TON. Пробуем несколько классов: в разных версиях tonutils
-    они называются по-разному, и жёсткая привязка к одному имени — лишний
-    повод сломаться на ровном месте после обновления библиотеки.
-    """
-    import tonutils.client as tc
+async def _connect_client():
+    """Подключённый клиент к mainnet. Закрывать обязан вызывающий код."""
+    from ton_core import NetworkGlobalID
+    from tonutils.clients import ToncenterClient
 
-    api_key = (config.TONCENTER_API_KEY or "").strip()
-    last_err = None
-    for name in ("ToncenterV3Client", "ToncenterClient", "TonapiClient"):
-        cls = getattr(tc, name, None)
-        if cls is None:
-            continue
-        try:
-            if name == "TonapiClient":
-                if not api_key:
-                    continue  # tonapi без ключа не работает
-                return cls(api_key=api_key, is_testnet=False)
-            return cls(api_key=api_key or None, is_testnet=False)
-        except Exception as e:
-            last_err = e
-            try:
-                return cls(is_testnet=False)  # часть версий не принимает api_key=None
-            except Exception as e2:
-                last_err = e2
-    raise TonPayError(f"Не удалось создать клиент TON: {last_err}")
+    api_key = (config.TONCENTER_API_KEY or "").strip() or None
+    client = ToncenterClient(network=NetworkGlobalID.MAINNET, api_key=api_key)
+    await client.connect()
+    return client
 
 
 async def _open_wallet(version: str | None = None):
-    """-> (wallet, адрес строкой). Бросает TonPayError с понятным текстом."""
+    """
+    -> (wallet, client). Клиент нужно закрыть через client.close().
+    Бросает TonPayError с понятным для админа текстом.
+    """
     words = _mnemonic_words()
     if not words:
         raise TonPayError("TON_WALLET_MNEMONIC не задан — автоплатёж выключен.")
-    if len(words) not in (12, 24):
+    if len(words) not in (12, 18, 24):
         raise TonPayError(
-            f"В TON_WALLET_MNEMONIC {len(words)} слов, а должно быть 24 (или 12). "
+            f"В TON_WALLET_MNEMONIC {len(words)} слов, а должно быть 24 (или 12/18). "
             "Проверь переменную на Railway."
         )
 
     try:
         cls = _wallet_class(version)
-        client = _client()
-        wallet, _pub, _priv, _mnemo = cls.from_mnemonic(client, words)
     except TonPayError:
         raise
     except ImportError as e:
         raise TonPayError(
             f"Библиотека для подписи TON не установлена ({e}). "
-            "Добавь `tonutils` в requirements.txt и передеплой."
+            "Проверь, что `tonutils` есть в requirements.txt, и передеплой."
         )
-    except Exception as e:
-        raise TonPayError(f"Не удалось открыть кошелёк: {e}")
 
-    return wallet, wallet.address.to_str()
+    client = await _connect_client()
+    try:
+        wallet, _pub, _priv, _mnemo = cls.from_mnemonic(client, words)
+    except Exception as e:
+        await _safe_close(client)
+        raise TonPayError(
+            f"Не удалось открыть кошелёк из сид-фразы: {e}\n"
+            "Чаще всего это опечатка в словах или лишние символы в переменной."
+        )
+    return wallet, client
+
+
+async def _safe_close(client) -> None:
+    try:
+        await client.close()
+    except Exception:
+        pass  # закрытие клиента не должно ломать результат оплаты
 
 
 async def get_wallet_info(version: str | None = None) -> dict:
     """
     Диагностика для команды /tonwallet: адрес и баланс.
-    Ничего не отправляет и не подписывает — безопасно дёргать когда угодно.
+    Ничего не подписывает и не отправляет — безопасно дёргать когда угодно.
     """
-    wallet, address = await _open_wallet(version)
-    balance_ton = None
+    wallet, client = await _open_wallet(version)
     try:
-        # Имя метода тоже плавает между версиями библиотеки
-        for attr in ("balance", "get_balance"):
-            fn = getattr(wallet, attr, None)
-            if fn is None:
-                continue
-            value = await fn() if callable(fn) else fn
-            balance_ton = int(value) / NANO if value and value > 1000 else value
-            break
-    except Exception:
         balance_ton = None
-    return {"address": address, "balance_ton": balance_ton}
+        try:
+            await wallet.refresh()  # подтягивает баланс и состояние из сети
+            balance_ton = int(wallet.balance) / NANO
+        except Exception:
+            balance_ton = None
+        # Неbounceable (UQ...) — та форма адреса, которую показывают кошельки
+        address = wallet.address.to_str(is_bounceable=False)
+        return {"address": address, "balance_ton": balance_ton}
+    finally:
+        await _safe_close(client)
 
 
 def _parse_messages(tx: dict) -> list[dict]:
@@ -167,7 +168,7 @@ def total_amount_nano(tx: dict) -> int:
 async def check_limits(tx: dict) -> int:
     """
     Проверка потолков ДО любых действий с кошельком.
-    -> сумма перевода в нанотонах. Бросает TonPayError, если нельзя платить.
+    -> сумма перевода в нанотонах. Бросает TonPayError, если платить нельзя.
     """
     from database.db import get_ton_spent_today_nano
 
@@ -220,8 +221,17 @@ async def pay_transaction(tx: dict, order_id: int, purpose: str) -> dict:
             "Подтверди вручную по ссылке."
         )
 
-    amount_nano = await check_limits(tx)
     msg = messages[0]
+    if msg.get("stateInit"):
+        # stateInit = разворачивание нового контракта вместе с переводом.
+        # Для покупки звёзд и аренды он не нужен; если вдруг появился —
+        # значит происходит что-то нетипичное, и решать должен человек.
+        raise TonPayError(
+            "В транзакции есть stateInit (развёртывание контракта) — "
+            "бот такое сам не подписывает. Проверь и подтверди вручную."
+        )
+
+    amount_nano = await check_limits(tx)
     destination = msg["address"]
 
     # Бронируем ДО отправки: если такой платёж уже начинали — выходим сразу.
@@ -232,33 +242,27 @@ async def pay_transaction(tx: dict, order_id: int, purpose: str) -> dict:
         )
 
     try:
-        wallet, address = await _open_wallet()
+        wallet, client = await _open_wallet()
     except TonPayError:
         await release_ton_payment(order_id, purpose)  # кошелёк не открыли — ничего не ушло
         raise
 
     try:
+        from ton_core import Address, Cell
+
         body = None
         payload = msg.get("payload")
         if payload:
-            from pytoniq_core import Cell
-
+            # payload приходит от MarketApp как BOC в base64
             body = Cell.one_from_boc(base64.b64decode(payload))
 
-        state_init = None
-        raw_init = msg.get("stateInit")
-        if raw_init:
-            from pytoniq_core import Cell
-
-            state_init = Cell.one_from_boc(base64.b64decode(raw_init))
-
-        kwargs = {"destination": destination, "amount": amount_nano / NANO}
-        if body is not None:
-            kwargs["body"] = body
-        if state_init is not None:
-            kwargs["state_init"] = state_init
-
-        tx_hash = await wallet.transfer(**kwargs)
+        sent = await wallet.transfer(
+            destination=Address(destination),
+            amount=amount_nano,  # в 2.x transfer принимает НАНОТОНЫ
+            body=body,
+        )
+        tx_hash = getattr(sent, "normalized_hash", None)
+        address = wallet.address.to_str(is_bounceable=False)
     except Exception as e:
         # ВАЖНО: бронь НЕ снимаем. На этом этапе транзакция могла уже уйти в
         # сеть, а ответ потеряться — повторная отправка означала бы вторую
@@ -269,6 +273,8 @@ async def pay_transaction(tx: dict, order_id: int, purpose: str) -> dict:
             "⚠️ Проверь кошелёк — возможно, транзакция всё-таки ушла. "
             "Повторно бот платить не будет."
         )
+    finally:
+        await _safe_close(client)
 
     await finish_ton_payment(order_id, purpose, ok=True)
     return {
