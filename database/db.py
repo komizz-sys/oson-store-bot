@@ -169,16 +169,35 @@ PAID_STATUSES = ("paid", "fulfilling", "completed")
 
 async def get_revenue_stats(since_sql: str | None, ton_gram_rate_uzs: int) -> dict:
     """
-    Доход по категориям за период (или за всё время, если since_sql=None).
-    Для аренды (nft_rent) также считает реальный расход на MarketApp —
-    он известен точно: base_price_per_day_gram * rent_days, переведённый
-    в сум по ТЕКУЩЕМУ курсу (курс на момент самой аренды не хранится,
-    так что при сильном изменении курса цифра будет чуть приблизительной).
+    Доход и РАСХОД по категориям за период (или за всё время, если since_sql=None).
+
+    Откуда берётся расход — два источника, в порядке надёжности:
+
+    1) ЖУРНАЛ АВТОПЛАТЕЖЕЙ (ton_payments) — сколько TON реально ушло с
+       кошелька за конкретный заказ. Это не оценка, а факт: ровно та сумма,
+       которую подписал и отправил бот. Работает для заказов, оплаченных
+       автоматически (звёзды, аренда).
+
+    2) РАСЧЁТ ПО ЦЕНЕ АРЕНДЫ — base_price_per_day_gram * rent_days. Нужен
+       для заказов ДО включения автооплаты, когда админ платил вручную из
+       кошелька и в журнале записи нет.
+
+    Оба переводятся в сумы по ТЕКУЩЕМУ курсу TON: курс на момент сделки не
+    хранится, поэтому при сильном движении курса старые заказы посчитаются
+    чуть иначе. Для текущей недели/месяца разница незаметна.
+
+    Звёзды и премиум, купленные вручную (без автооплаты), в расход не
+    попадают — бот не может знать, сколько за них заплатили. Такие суммы
+    по-прежнему вносятся руками, и в ответе видно, сколько заказов
+    осталось непосчитанными.
+
     -> {
-        "income_by_category": {"stars": int, "premium": int, "simple_gift": int, "nft_rent": int},
-        "income_total": int,
-        "orders_count": int,
-        "rent_auto_cost_uzs": int,
+        "income_by_category": {...}, "income_total": int, "orders_count": int,
+        "rent_auto_cost_uzs": int,              # как раньше, для совместимости
+        "auto_cost_by_category": {...},         # факт из журнала + расчёт аренды
+        "auto_cost_total": int,
+        "ton_spent_gram": float,                # сколько TON списано за период
+        "orders_without_cost": int,             # заказы, по которым расход неизвестен
     }
     """
     status_placeholders = ",".join("?" for _ in PAID_STATUSES)
@@ -195,25 +214,124 @@ async def get_revenue_stats(since_sql: str | None, ton_gram_rate_uzs: int) -> di
         ) as cur:
             rows = await cur.fetchall()
 
+        # Аренда, оплаченная ВРУЧНУЮ (в журнале автоплатежей записи нет) —
+        # считаем по цене лота. Заказы с автооплатой исключаем, иначе
+        # расход по ним посчитается дважды.
         async with db.execute(
-            f"""SELECT COALESCE(SUM(CAST(base_price_per_day_gram AS REAL) * rent_days), 0)
-                FROM orders WHERE {where} AND category = 'nft_rent'
-                AND base_price_per_day_gram IS NOT NULL AND rent_days IS NOT NULL""",
+            f"""SELECT COALESCE(SUM(CAST(o.base_price_per_day_gram AS REAL) * o.rent_days), 0)
+                FROM orders o WHERE {where.replace('status', 'o.status').replace('created_at', 'o.created_at')}
+                AND o.category = 'nft_rent'
+                AND o.base_price_per_day_gram IS NOT NULL AND o.rent_days IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM ton_payments p
+                                WHERE p.order_id = o.id AND p.status = 'sent')""",
             params,
         ) as cur:
-            rent_gram_total = (await cur.fetchone())[0] or 0
+            rent_gram_manual = (await cur.fetchone())[0] or 0
+
+        # Аренда с автооплатой — берём ФАКТ: сколько нанотонов реально ушло.
+        # Только аренда: у звёзд и премиума расход считается по закупочной
+        # цене (ниже), и брать их ещё и отсюда значило бы посчитать дважды.
+        async with db.execute(
+            f"""SELECT COALESCE(SUM(p.amount_nano), 0)
+                FROM ton_payments p JOIN orders o ON o.id = p.order_id
+                WHERE p.status = 'sent' AND o.category = 'nft_rent'
+                  AND {where.replace('status', 'o.status').replace('created_at', 'o.created_at')}""",
+            params,
+        ) as cur:
+            rent_nano_paid = (await cur.fetchone())[0] or 0
+
+        # Звёзды: сколько всего звёзд продано (quantity хранит их количество)
+        async with db.execute(
+            f"SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE {where} AND category = 'stars'",
+            params,
+        ) as cur:
+            stars_sold = (await cur.fetchone())[0] or 0
+
+        # Премиум: закупка у каждого тарифа своя, поэтому считаем по названиям
+        async with db.execute(
+            f"SELECT item_name, COUNT(*) FROM orders WHERE {where} AND category = 'premium' GROUP BY item_name",
+            params,
+        ) as cur:
+            premium_rows = await cur.fetchall()
+
+        # Подарки: наценка фиксированная, остальное в цене — расход
+        async with db.execute(
+            f"""SELECT COALESCE(SUM(price_uzs), 0), COALESCE(SUM(quantity), 0)
+                FROM orders WHERE {where} AND category = 'simple_gift'""",
+            params,
+        ) as cur:
+            gift_price_total, gift_qty = await cur.fetchone()
 
     income_by_category = {row[0]: row[1] for row in rows}
     orders_count = sum(row[2] for row in rows)
     income_total = sum(income_by_category.values())
-    rent_auto_cost_uzs = round(rent_gram_total * ton_gram_rate_uzs)
+
+    NANO = 1_000_000_000
+    auto_cost_by_category: dict[str, int] = {}
+
+    # --- Аренда: факт по кошельку + расчёт для оплаченных вручную ---
+    rent_gram_total = (rent_nano_paid / NANO) + rent_gram_manual
+    if rent_gram_total:
+        auto_cost_by_category["nft_rent"] = round(rent_gram_total * ton_gram_rate_uzs)
+
+    # --- Звёзды: количество × закупочная цена звезды ---
+    if stars_sold:
+        auto_cost_by_category["stars"] = round(stars_sold * config.STARS_COST_UZS)
+
+    # --- Премиум: у каждого тарифа своя закупка (data/prices.json, cost_uzs) ---
+    premium_cost, premium_unknown = _premium_cost(premium_rows)
+    if premium_cost:
+        auto_cost_by_category["premium"] = premium_cost
+
+    # --- Подарки: цена минус наша наценка ---
+    if gift_price_total:
+        cost = gift_price_total - config.SIMPLE_GIFT_MARKUP_UZS * (gift_qty or 0)
+        auto_cost_by_category["simple_gift"] = max(0, round(cost))
 
     return {
         "income_by_category": income_by_category,
         "income_total": income_total,
         "orders_count": orders_count,
-        "rent_auto_cost_uzs": rent_auto_cost_uzs,
+        # Старое поле оставлено как было — аналитика на него уже опирается
+        "rent_auto_cost_uzs": auto_cost_by_category.get("nft_rent", 0),
+        "auto_cost_by_category": auto_cost_by_category,
+        "auto_cost_total": sum(auto_cost_by_category.values()),
+        "ton_spent_gram": round(rent_gram_total, 4),
+        "stars_sold": stars_sold,
+        # Тарифы премиума, для которых закупка не указана в прайсе — их расход
+        # не посчитан, и об этом нужно честно сказать в отчёте
+        "premium_unknown": premium_unknown,
     }
+
+
+def _premium_cost(premium_rows) -> tuple[int, list[str]]:
+    """
+    Расход по Premium: у каждого тарифа своя закупочная цена, она лежит
+    в data/prices.json рядом с ценой продажи (поле cost_uzs).
+
+    Сопоставляем по названию тарифа. Заказ хранит item_name вида
+    "Premium — 3 месяца", а в прайсе лежит просто "3 месяца", поэтому
+    ищем вхождение. Тарифы, для которых закупка не указана, возвращаем
+    отдельным списком — чтобы отчёт не делал вид, что посчитал всё.
+    -> (сумма расхода, [названия непосчитанных тарифов])
+    """
+    try:
+        from services.prices import get_premium_packages
+        packages = get_premium_packages()
+    except Exception:
+        return 0, []
+
+    total = 0
+    unknown: list[str] = []
+    for item_name, count in premium_rows:
+        name = item_name or ""
+        match = next((p for p in packages if p.get("label") and p["label"] in name), None)
+        cost = (match or {}).get("cost_uzs")
+        if cost:
+            total += int(cost) * count
+        else:
+            unknown.append(name)
+    return total, unknown
 
 
 async def save_support_mapping(admin_id: int, admin_message_id: int, user_id: int):

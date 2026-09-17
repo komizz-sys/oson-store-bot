@@ -220,6 +220,46 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
     })
 
 
+async def handle_send_rent_tutorial(request: web.Request) -> web.Response:
+    """
+    Переотправить клиенту видео-инструкцию «как получить ссылку для аренды».
+
+    Видео живёт в чате бота, а ссылку человек вводит в витрине — и к моменту,
+    когда она понадобилась, инструкция уже уехала вверх по переписке за
+    десятком сообщений. Кнопка в витрине присылает её заново, свежим
+    сообщением, и витрина закрывается — человек сразу видит видео.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    # Берём реальный заказ аренды клиента — тексты инструкции зависят от
+    # языка, а сама функция общая с той, что шлёт видео после оплаты.
+    orders = await get_user_orders(user["id"])
+    order = next(
+        (o for o in orders if o["category"] == "nft_rent"
+         and o["status"] in ("paid", "fulfilling")),
+        None,
+    )
+    if not order:
+        # Заказа нет (например, человек просто листает витрину) — покажем
+        # инструкцию всё равно, подставив минимально нужные поля.
+        order = {"user_id": user["id"], "item_name": "", "id": 0}
+
+    from services.rent_link import send_rent_link_tutorial
+
+    try:
+        await send_rent_link_tutorial(_bot, order)
+    except Exception:
+        return web.json_response({"ok": False, "error": "send_failed"}, status=502)
+    return web.json_response({"ok": True})
+
+
 async def handle_cancel_order(request: web.Request) -> web.Response:
     """
     Отмена заказа самим клиентом из витрины.
@@ -715,6 +755,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/my_rentals", handle_my_rentals)
     app.router.add_post("/public/active_order", handle_active_order)
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
+    app.router.add_post("/public/send_rent_tutorial", handle_send_rent_tutorial)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",

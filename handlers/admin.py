@@ -1052,22 +1052,13 @@ async def retry_rent_connect(call: CallbackQuery, bot: Bot):
 
     await call.answer("Пробую подключить...")
 
-    from services.rent_connect import attempt_connect, explain_error
+    from services.rent_connect import announce_success, attempt_connect, explain_error
 
     ok, err = await attempt_connect(bot, order, link)
     if ok:
-        lang = await _get_user_language(order["user_id"])
-        from services.rent_connect import SUCCESS as RENT_SUCCESS
-
-        try:
-            await bot.send_message(
-                order["user_id"],
-                RENT_SUCCESS.get(lang if lang in RENT_SUCCESS else "uz").format(
-                    item=order["item_name"]
-                ),
-            )
-        except Exception:
-            pass
+        # Тот же путь, что и у автоматического подключения: клиенту сообщение,
+        # заказ закрывается как выполненный, запись в канал и в ленту.
+        await announce_success(bot, order, " (вручную по кнопке)")
         await _append_note(call, f"\n\n✅ Аренда подключена (заказ #{order_id})")
     else:
         await _append_note(
