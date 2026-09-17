@@ -23,5 +23,42 @@ def admin_review_cart_kb(cart_id: str) -> InlineKeyboardMarkup:
 def admin_fulfill_kb(order_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📤 Заказ выполнен (звёзды/подарок отправлены)", callback_data=f"admin:done:{order_id}")
+    b.button(text="🚫 Отменить заказ", callback_data=f"admin:cancel:{order_id}")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_cancel_kb(order_id: int) -> InlineKeyboardMarkup:
+    """
+    Одна кнопка отмены — вешается на сообщения, где заказ уже оплачен, но
+    что-то пошло не так (автопокупка не удалась, фейковый чек подтвердили по
+    ошибке). Без неё такой заказ навсегда висел бы у клиента в витрине как
+    активный и не давал бы оформить новый.
+    """
+    b = InlineKeyboardBuilder()
+    b.button(text="🚫 Отменить заказ", callback_data=f"admin:cancel:{order_id}")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_cancel_cart_kb(cart_id: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="🚫 Отменить всю корзину", callback_data=f"admin:cancel_cart:{cart_id}")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_cancel_request_kb(order_id: int, cart_id: str | None = None) -> InlineKeyboardMarkup:
+    """
+    Клиент попросил отменить УЖЕ ОПЛАЧЕННЫЙ заказ прямо из витрины.
+    Сам он такой заказ отменить не может (деньги уже у продавца), поэтому
+    решение принимает админ: отменить или оставить в работе.
+    """
+    b = InlineKeyboardBuilder()
+    if cart_id:
+        b.button(text="🚫 Отменить всю корзину", callback_data=f"admin:cancel_cart:{cart_id}")
+    else:
+        b.button(text="🚫 Отменить заказ", callback_data=f"admin:cancel:{order_id}")
+    b.button(text="↩️ Оставить в работе", callback_data=f"admin:keep:{order_id}")
     b.adjust(1)
     return b.as_markup()
