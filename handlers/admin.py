@@ -297,8 +297,12 @@ async def admin_help(message: Message):
         "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
         "/cancel &lt;id&gt; — отменить заказ на любом этапе, даже уже оплаченный "
         "(напр. /cancel 19) — снимает его у клиента из витрины\n"
-        "/tonwallet — кошелёк магазина: адрес, баланс, лимиты и последние "
-        "автоплатежи (проверь ПЕРЕД включением автооплаты)\n"
+        "/tonwallet [адрес] — кошелёк магазина: адрес, баланс, лимиты и "
+        "автоплатежи. С адресом (<code>/tonwallet UQ...</code>) сам подберёт "
+        "нужные TON_WALLET_VERSION и TON_WALLET_DERIVATION\n"
+        "/hidetop &lt;@username|id&gt; — убрать клиента из публичного рейтинга "
+        "(без аргумента покажет уже скрытых)\n"
+        "/showtop &lt;@username|id&gt; — вернуть его обратно\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
@@ -690,22 +694,125 @@ async def reject_cart_payment(call: CallbackQuery, bot: Bot):
         pass
 
 
+async def _resolve_user(query: str, message: Message):
+    """
+    Найти клиента по @username, имени или id и вернуть его.
+    Если совпадений несколько — показываем список и просим уточнить по id:
+    имена в Telegram не уникальны, и молча выбрать первого попавшегося нельзя.
+    """
+    from database.db import find_users_by_name
+
+    users = await find_users_by_name(query)
+    if not users:
+        await message.answer(
+            f"Не нашёл никого по запросу «{query}».\n"
+            "Попробуй @username или числовой id. Клиент должен был хоть раз "
+            "запустить бота — иначе его нет в базе."
+        )
+        return None
+    if len(users) > 1:
+        lines = ["Нашлось несколько — уточни по id:\n"]
+        for u in users:
+            name = u.get("full_name") or "—"
+            uname = f"@{u['username']}" if u.get("username") else "без username"
+            lines.append(f"• <code>{u['user_id']}</code> — {name} ({uname})")
+        await message.answer("\n".join(lines))
+        return None
+    return users[0]
+
+
+@router.message(Command("hidetop"))
+async def hide_top_cmd(message: Message, command):
+    """
+    Убрать клиента из публичного рейтинга: /hidetop @username | id | имя
+
+    Заказы и статистика при этом не трогаются — скрывается только строка
+    в витрине. Для фейковых заказов правильнее /cancel: отменённый заказ
+    выпадает из рейтинга сам, потому что перестаёт считаться оплаченным.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.db import hide_from_leaderboard, get_hidden_from_leaderboard
+
+    arg = (command.args or "").strip()
+    if not arg:
+        hidden = await get_hidden_from_leaderboard()
+        if not hidden:
+            await message.answer(
+                "Сейчас из рейтинга никто не скрыт.\n\n"
+                "Скрыть: <code>/hidetop @username</code> или <code>/hidetop 6600750289</code>\n"
+                "Вернуть: <code>/showtop @username</code>"
+            )
+            return
+        lines = ["🙈 <b>Скрыты из рейтинга:</b>\n"]
+        for h in hidden:
+            name = h.get("full_name") or "—"
+            uname = f"@{h['username']}" if h.get("username") else "без username"
+            lines.append(f"• <code>{h['user_id']}</code> — {name} ({uname})")
+        lines.append("\nВернуть: <code>/showtop &lt;id&gt;</code>")
+        await message.answer("\n".join(lines))
+        return
+
+    user = await _resolve_user(arg, message)
+    if not user:
+        return
+
+    await hide_from_leaderboard(user["user_id"], reason=f"скрыт админом {message.from_user.id}")
+    name = user.get("full_name") or user.get("username") or user["user_id"]
+    await message.answer(
+        f"🙈 <b>{name}</b> убран из рейтинга.\n"
+        "В витрине пропадёт сразу — обнови вкладку TOP.\n\n"
+        f"Вернуть обратно: <code>/showtop {user['user_id']}</code>"
+    )
+
+
+@router.message(Command("showtop"))
+async def show_top_cmd(message: Message, command):
+    """Вернуть клиента в публичный рейтинг: /showtop @username | id"""
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.db import unhide_from_leaderboard
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer("Кого вернуть? <code>/showtop @username</code> или <code>/showtop 123456</code>")
+        return
+
+    user = await _resolve_user(arg, message)
+    if not user:
+        return
+
+    if await unhide_from_leaderboard(user["user_id"]):
+        name = user.get("full_name") or user.get("username") or user["user_id"]
+        await message.answer(f"👀 <b>{name}</b> снова в рейтинге.")
+    else:
+        await message.answer("Этот клиент и не был скрыт.")
+
+
 @router.message(Command("tonwallet"))
-async def ton_wallet_cmd(message: Message):
+async def ton_wallet_cmd(message: Message, command):
     """
     Проверка кошелька ДО включения автоплатежа.
 
-    Главное, что здесь видно, — какой адрес получается из сид-фразы. У одной
-    и той же фразы версии V5R1 и V4R2 дают РАЗНЫЕ адреса, и деньги лежат
-    только на одном. Поэтому показываем оба с балансами: тот, где баланс и
-    который совпадает с кошельком из marketapp.org, и надо указать в
-    TON_WALLET_VERSION. Команда ничего не отправляет и не подписывает.
+    Одна и та же сид-фраза даёт РАЗНЫЕ адреса для разных типов кошелька
+    (Telegram Wallet, W5, V4R2, V3...), и деньги лежат только на одном из
+    них. Угадывать бессмысленно, поэтому команда перебирает все типы и
+    показывает адреса с балансами.
+
+    Если передать свой адрес — <code>/tonwallet UQ...</code> — бот сам
+    найдёт совпадение и скажет, что писать в TON_WALLET_VERSION.
+
+    Команда ничего не подписывает и не отправляет.
     """
     if not is_admin(message.from_user.id):
         return
 
     from database.db import get_ton_payments, get_ton_spent_today_nano
     from services import ton_wallet
+
+    expected = (command.args or "").strip() or None
 
     lines = ["🔑 <b>TON-кошелёк магазина</b>\n"]
     lines.append(f"Автоплатёж: {'✅ включён' if config.TON_AUTO_PAY_ENABLED else '❌ выключен'}")
@@ -717,19 +824,60 @@ async def ton_wallet_cmd(message: Message):
     )
 
     if config.TON_WALLET_MNEMONIC:
-        lines.append("\n<b>Адреса из твоей сид-фразы:</b>")
-        for version in ("v5r1", "v4r2"):
-            try:
-                info = await ton_wallet.get_wallet_info(version)
-                bal = info.get("balance_ton")
-                bal_text = f"{bal:.4f} TON" if isinstance(bal, (int, float)) else "баланс не получен"
-                lines.append(f"\n<b>{version}</b>\n<code>{info['address']}</code>\n{bal_text}")
-            except Exception as e:
-                lines.append(f"\n<b>{version}</b> — ошибка: {e}")
-        lines.append(
-            "\n\n👆 Укажи в <code>TON_WALLET_VERSION</code> ту версию, чей адрес "
-            "совпадает с кошельком, которым ты генерировал токен на marketapp.org."
-        )
+        lines.append(f"Деривация: <code>{config.TON_WALLET_DERIVATION}</code>")
+        await message.answer("🔍 Перебираю все типы кошельков и способы деривации...")
+        rows = await ton_wallet.scan_versions(expected)
+
+        matched = next((r for r in rows if r["match"]), None)
+
+        if matched:
+            # Нашли — незачем вываливать два десятка чужих адресов
+            deriv = matched["derivation"]
+            if deriv == "bip39" and matched["path"]:
+                deriv = f"bip39:{matched['path']}"
+            bal = matched["balance_ton"]
+            bal_text = f"{bal:.4f} TON" if isinstance(bal, (int, float)) else "баланс не получен"
+            lines.append(
+                f"\n✅ <b>Кошелёк найден!</b>\n"
+                f"<code>{matched['address']}</code>\n"
+                f"Баланс: {bal_text}\n"
+                f"Тип: {matched['label']}\n\n"
+                f"Пропиши на Railway:\n"
+                f"<code>TON_WALLET_VERSION={matched['version']}</code>\n"
+                f"<code>TON_WALLET_DERIVATION={deriv}</code>\n\n"
+                "После этого можно включать TON_AUTO_PAY_ENABLED=true."
+            )
+        else:
+            shown = [r for r in rows if r["address"] and not r["error"]]
+            if expected:
+                lines.append(
+                    f"\n⚠️ <b>Ни один вариант не дал адрес</b>\n<code>{expected}</code>\n\n"
+                    f"Проверено сочетаний: {len(shown)}. Значит сид-фраза не от этого "
+                    "кошелька.\n\nЧто проверить:\n"
+                    "• порядок слов — читать по НОМЕРАМ (1,2,3…), а не построчно "
+                    "слева направо, если слова показаны в две колонки;\n"
+                    "• нет ли опечатки в слове;\n"
+                    "• тот ли это кошелёк — адрес должен быть от кошелька, которым "
+                    "сгенерирован токен на marketapp.org."
+                )
+            else:
+                lines.append("\n<b>Адреса из твоей сид-фразы:</b>")
+                for r in shown[:10]:
+                    tag = r["derivation"] + (f":{r['path']}" if r["path"] else "")
+                    bal = r["balance_ton"]
+                    bal_text = f"{bal:.4f} TON" if isinstance(bal, (int, float)) else "—"
+                    lines.append(
+                        f"\n<b>{r['version']}</b> · {tag}\n<code>{r['address']}</code>\n{bal_text}"
+                    )
+                lines.append(
+                    "\n\n👆 Проще так: пришли свой адрес командой "
+                    "<code>/tonwallet UQ...</code> — найду совпадение сам "
+                    "и скажу, что прописать в переменные."
+                )
+
+            errors = [r for r in rows if r["error"]]
+            if errors:
+                lines.append(f"\n\n⚠️ С ошибкой: {len(errors)} шт. Первая: {errors[0]['error'][:150]}")
 
     spent = await get_ton_spent_today_nano()
     lines.append(f"\n\n💸 Потрачено сегодня: {spent / 1_000_000_000:.4f} TON")

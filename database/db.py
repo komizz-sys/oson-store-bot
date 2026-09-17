@@ -77,6 +77,18 @@ CREATE TABLE IF NOT EXISTS ton_payments (
 );
 """
 
+# Кого не показывать в публичном рейтинге (вкладка TOP в витрине).
+# Нужно для своих тестовых аккаунтов и для случаев, когда заказ был реальным,
+# но светить клиента в топе не хочется. Сам заказ при этом остаётся в базе и в
+# статистике — скрывается только строка в рейтинге.
+CREATE_LEADERBOARD_HIDDEN_TABLE = """
+CREATE TABLE IF NOT EXISTS leaderboard_hidden (
+    user_id INTEGER PRIMARY KEY,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
 
 async def init_db():
     # Папка под базу может не существовать — например, при первом запуске на
@@ -92,6 +104,7 @@ async def init_db():
         await db.execute(CREATE_ORDERS_TABLE)
         await db.execute(CREATE_SUPPORT_TABLE)
         await db.execute(CREATE_TON_PAYMENTS_TABLE)
+        await db.execute(CREATE_LEADERBOARD_HIDDEN_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
@@ -460,6 +473,8 @@ async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
     if since_sql:
         where += " AND o.created_at >= ?"
         params.append(since_sql)
+    # Скрытые вручную аккаунты (см. /hidetop) в публичный рейтинг не попадают
+    where += " AND o.user_id NOT IN (SELECT user_id FROM leaderboard_hidden)"
     params.append(limit)
 
     async with aiosqlite.connect(config.DB_PATH) as db:
@@ -624,5 +639,62 @@ async def get_ton_payments(limit: int = 10) -> list[dict]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM ton_payments ORDER BY id DESC LIMIT ?", (limit,)
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+# ---- Управление публичным рейтингом (см. /hidetop, /showtop) ----
+
+async def hide_from_leaderboard(user_id: int, reason: str | None = None):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO leaderboard_hidden (user_id, reason) VALUES (?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason""",
+            (user_id, reason),
+        )
+        await db.commit()
+
+
+async def unhide_from_leaderboard(user_id: int) -> bool:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute("DELETE FROM leaderboard_hidden WHERE user_id = ?", (user_id,))
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_hidden_from_leaderboard() -> list[dict]:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT h.user_id, h.reason, u.username, u.full_name
+               FROM leaderboard_hidden h
+               LEFT JOIN users u ON u.user_id = h.user_id
+               ORDER BY h.created_at DESC"""
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def find_users_by_name(query: str) -> list[dict]:
+    """
+    Поиск клиента по @username, имени или числовому id — чтобы админу не
+    приходилось выяснять user_id вручную. Возвращает несколько совпадений:
+    имена в Telegram не уникальны, и выбрать нужного должен человек.
+    """
+    q = query.strip().lstrip("@")
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if q.isdigit():
+            async with db.execute(
+                "SELECT user_id, username, full_name FROM users WHERE user_id = ?", (int(q),)
+            ) as cur:
+                rows = [dict(r) for r in await cur.fetchall()]
+                if rows:
+                    return rows
+        like = f"%{q}%"
+        async with db.execute(
+            """SELECT user_id, username, full_name FROM users
+               WHERE username LIKE ? COLLATE NOCASE OR full_name LIKE ? COLLATE NOCASE
+               LIMIT 10""",
+            (like, like),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
