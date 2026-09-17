@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS orders (
     content_text TEXT,               -- текст-инструкция после выполнения
     rent_link TEXT,                  -- ссылка от клиента для подключения арендованного гифта
     expected_amount_uzs INTEGER,     -- уникальная сумма к оплате (price_uzs + анти-коллизийная надбавка)
+    cart_id TEXT,                    -- если заказ оформлен из корзины: общий id всех товаров этой корзины
+                                      -- (оплата у них одна на всех, expected_amount_uzs = сумма всей корзины)
+    is_extension INTEGER DEFAULT 0,  -- 1 = это ПРОДЛЕНИЕ уже действующей аренды, а не новая аренда
+    parent_order_id INTEGER,         -- какой заказ аренды продлеваем (для is_extension = 1)
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
@@ -74,6 +78,9 @@ async def init_db():
             "ALTER TABLE orders ADD COLUMN rent_link TEXT",
             "ALTER TABLE orders ADD COLUMN reminder_sent INTEGER DEFAULT 0",
             "ALTER TABLE orders ADD COLUMN expected_amount_uzs INTEGER",
+            "ALTER TABLE orders ADD COLUMN cart_id TEXT",
+            "ALTER TABLE orders ADD COLUMN is_extension INTEGER DEFAULT 0",
+            "ALTER TABLE orders ADD COLUMN parent_order_id INTEGER",
         ):
             try:
                 await db.execute(stmt)
@@ -446,6 +453,64 @@ async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
         ) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+
+# ---- Корзина: несколько товаров, одна оплата ----
+# Каждый товар корзины — обычная строка в orders (чтобы выполнение, статистика
+# и история работали ровно как раньше), но у всех товаров одной корзины общий
+# cart_id и ОДИНАКОВАЯ expected_amount_uzs — сумма всей корзины. Так по одной
+# SMS о поступлении понятно, что оплачена именно эта корзина целиком.
+
+async def get_cart_orders(cart_id: str) -> list[dict]:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM orders WHERE cart_id = ? ORDER BY id", (cart_id,)
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def set_cart_status(cart_id: str, status: str, admin_comment: str | None = None) -> list[int]:
+    """Меняет статус СРАЗУ ВСЕМ товарам корзины — они оплачиваются одной суммой,
+    поэтому и подтверждаются/отклоняются только вместе."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        if admin_comment is not None:
+            await db.execute(
+                "UPDATE orders SET status=?, admin_comment=? WHERE cart_id=?",
+                (status, admin_comment, cart_id),
+            )
+        else:
+            await db.execute("UPDATE orders SET status=? WHERE cart_id=?", (status, cart_id))
+        await db.commit()
+        async with db.execute("SELECT id FROM orders WHERE cart_id=?", (cart_id,)) as cur:
+            return [row[0] async for row in cur]
+
+
+async def attach_cart_payment_proof(cart_id: str, file_id: str):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE orders SET payment_proof_file_id=?, status='payment_review' WHERE cart_id=?",
+            (file_id, cart_id),
+        )
+        await db.commit()
+
+
+# ---- Аренда: что у клиента сейчас арендовано и когда заканчивается ----
+
+async def get_user_rent_orders(user_id: int) -> list[dict]:
+    """Все оплаченные заказы аренды клиента (включая продления) — из них
+    services/rent_extension.py собирает список действующих аренд."""
+    status_placeholders = ",".join("?" for _ in PAID_STATUSES)
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            f"""SELECT * FROM orders
+                WHERE user_id = ? AND category = 'nft_rent'
+                  AND status IN ({status_placeholders})
+                ORDER BY id ASC""",
+            [user_id, *PAID_STATUSES],
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
 
 # ---- Напоминания о продлении Premium (см. services/premium_reminder.py) ----

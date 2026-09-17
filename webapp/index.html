@@ -238,6 +238,15 @@
       </div>
     </div>
 
+    <!-- Мои аренды: показывается только тем, у кого есть действующая аренда.
+         Здесь же кнопка продления — чтобы подарок не "сгорел" незаметно. -->
+    <div id="my-rentals-box" class="hidden mb-3">
+      <h3 class="text-[13px] font-bold text-white mb-2 flex items-center gap-1.5">
+        <span>⏳</span><span data-i18n="rentals_title">Mening ijaralarim</span>
+      </h3>
+      <div id="my-rentals-list" class="space-y-2"></div>
+    </div>
+
     <!-- Как работает аренда: свёрнуто по умолчанию, чтобы не мешать
          постоянным клиентам, но новичок сразу видит кнопку и всё понимает -->
     <button onclick="toggleRentHowto()" class="press w-full glass-card rounded-2xl px-4 py-3 mb-3 flex items-center justify-between">
@@ -269,6 +278,40 @@
       <h3 class="text-[16px] font-bold text-white mb-3" data-i18n="collection_title">Kolleksiya bo'yicha filtr</h3>
       <div id="collection-list" class="space-y-1.5 mb-4"></div>
       <button id="collection-close-btn" class="w-full py-3.5 rounded-2xl pill press font-semibold text-sm" data-i18n="modal_cancel">Bekor qilish</button>
+    </div>
+  </div>
+
+  <!-- ================= SAVAT (корзина) ================= -->
+  <div id="view-savat" class="view-hidden p-4">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-[20px] font-bold tracking-tight" data-i18n="cart_title">Savat</h2>
+      <button id="cart-clear-btn" class="hidden press pill rounded-xl px-3 py-1.5 text-[11px] text-gray-400" data-i18n="cart_clear">Savatni tozalash</button>
+    </div>
+
+    <div id="cart-list" class="space-y-2.5"></div>
+
+    <!-- Итог + оплата: появляется только когда в корзине что-то есть -->
+    <div id="cart-checkout" class="hidden mt-4">
+      <div class="glass-card rounded-[22px] p-4 mb-3">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-[13px] text-gray-400" data-i18n="cart_total">Jami</span>
+          <span id="cart-total" class="text-[20px] font-black text-neon-yellow">0</span>
+        </div>
+        <div class="border-t border-white/[0.08] pt-3">
+          <p class="text-[10px] text-gray-500 mb-0.5" data-i18n="modal_card_label">To'lov uchun karta</p>
+          <p class="text-[15px] font-mono font-bold text-white mb-1.5 tracking-wider" id="cart-card-number">----</p>
+          <div class="flex justify-between items-end">
+            <div>
+              <p class="text-[9px] text-gray-500" data-i18n="modal_card_holder_label">Qabul qiluvchi</p>
+              <p class="text-xs font-medium" id="cart-card-holder">—</p>
+            </div>
+            <button onclick="copyCard()" class="press bg-neon-blue/15 text-neon-blue px-3 py-1.5 rounded-xl text-[10px] font-semibold" data-i18n="modal_copy">Nusxalash</button>
+          </div>
+        </div>
+      </div>
+      <p class="text-[11px] text-gray-400 mb-2.5 leading-snug" data-i18n="cart_pay_hint">Kartaga jami summani yuboring.</p>
+      <p id="cart-error" class="hidden text-red-400 text-[11px] font-semibold mb-2"></p>
+      <button onclick="submitCartOrder()" id="cart-pay-btn" class="w-full py-4 rounded-2xl btn-primary press font-semibold text-white text-[15px]" data-i18n="modal_paid">To'ladim</button>
     </div>
   </div>
 
@@ -334,19 +377,25 @@
 
   <!-- ================= NAV ================= -->
   <nav class="fixed bottom-3 left-3 right-3 glass-nav rounded-[26px] flex justify-around p-2 z-30" style="margin-bottom: var(--safe-bottom);">
-    <button onclick="switchTab('asosiy')" id="tab-asosiy" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-3 rounded-2xl text-neon-blue">
+    <button onclick="switchTab('asosiy')" id="tab-asosiy" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-neon-blue">
       <span class="text-lg leading-none">🏠</span><span class="text-[9px] font-semibold" data-i18n="nav_main">Asosiy</span>
     </button>
-    <button onclick="switchTab('ijara')" id="tab-ijara" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-3 rounded-2xl text-gray-500">
+    <button onclick="switchTab('ijara')" id="tab-ijara" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-gray-500">
       <span class="text-lg leading-none">⚡️</span><span class="text-[9px]" data-i18n="nav_rent">Ijara</span>
     </button>
-    <button onclick="switchTab('tarix')" id="tab-tarix" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-3 rounded-2xl text-gray-500">
+    <!-- Корзина: бейдж с количеством товаров виден со всех вкладок, чтобы человек
+         не забыл, что уже что-то отложил -->
+    <button onclick="switchTab('savat')" id="tab-savat" class="nav-btn press relative flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-gray-500">
+      <span class="text-lg leading-none">🛒</span><span class="text-[9px]" data-i18n="nav_cart">Savat</span>
+      <span id="cart-badge" class="hidden absolute -top-0.5 right-0 min-w-[17px] h-[17px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none border border-black/40">0</span>
+    </button>
+    <button onclick="switchTab('tarix')" id="tab-tarix" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-gray-500">
       <span class="text-lg leading-none">📜</span><span class="text-[9px]" data-i18n="nav_history">Tarix</span>
     </button>
-    <button onclick="switchTab('top')" id="tab-top" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-3 rounded-2xl text-gray-500">
+    <button onclick="switchTab('top')" id="tab-top" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-gray-500">
       <span class="text-lg leading-none">🏆</span><span class="text-[9px]">TOP</span>
     </button>
-    <button onclick="switchTab('profil')" id="tab-profil" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-3 rounded-2xl text-gray-500">
+    <button onclick="switchTab('profil')" id="tab-profil" class="nav-btn press flex flex-col items-center gap-0.5 py-2 px-2 rounded-2xl text-gray-500">
       <span class="text-lg leading-none">👤</span><span class="text-[9px]" data-i18n="nav_profile">Profil</span>
     </button>
   </nav>
@@ -368,7 +417,7 @@
         <span>📤</span><span data-i18n="modal_preview">Telegram-da ko'rish</span>
       </button>
 
-      <div class="mb-3.5">
+      <div class="mb-3.5" id="recipient-field">
         <label class="block text-[11px] text-gray-400 mb-1.5 font-medium" data-i18n="modal_to_whom">Kimga?</label>
         <div class="flex gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08]">
           <button onclick="setRecipient('self')" id="rec-self" class="press flex-1 py-2 rounded-xl bg-white/10 font-semibold text-xs text-white" data-i18n="modal_to_self">O'zimga</button>
@@ -414,6 +463,11 @@
         </div>
       </div>
 
+      <!-- Продление аренды: коротко объясняем, что делать больше ничего не нужно -->
+      <p id="extend-note" class="hidden text-[11px] text-gray-400 mb-3 leading-snug bg-white/[0.04] border border-white/[0.08] rounded-xl p-2.5" data-i18n="rent_extend_note">
+        Sovg'a profilingizda qoladi.
+      </p>
+
       <div class="glass-card p-3.5 rounded-2xl mb-4 relative">
          <p class="text-[10px] text-gray-500 mb-0.5" data-i18n="modal_card_label">To'lov uchun karta (Uzcard/Humo)</p>
          <p class="text-[15px] font-mono font-bold text-white mb-1.5 tracking-wider" id="pay-card-number">----</p>
@@ -426,35 +480,53 @@
          </div>
       </div>
 
+      <!-- "В корзину" — для звёзд/премиума/подарков. Аренда и её продление
+           оплачиваются отдельно (свой срок и комиссия сети), поэтому там
+           кнопка скрыта. -->
+      <button onclick="addActiveItemToCart()" id="add-to-cart-btn" class="w-full py-4 rounded-2xl pill press font-semibold text-white text-[15px] mb-2 flex items-center justify-center gap-2">
+        <span>🛒</span><span data-i18n="cart_add">Savatga</span>
+      </button>
       <button onclick="sendPaymentInfo()" class="w-full py-4 rounded-2xl btn-primary press font-semibold text-white text-[15px] mb-2" data-i18n="modal_paid">To'ladim</button>
       <button onclick="closeModal()" class="w-full py-4 rounded-2xl pill press font-semibold text-gray-300 text-[15px]" data-i18n="modal_cancel">Bekor qilish</button>
     </div>
   </div>
 
-  <!-- ================= ORDER SUCCESS (не закрывает WebApp) ================= -->
-  <div id="order-success-screen" class="fixed inset-0 bg-background z-50 hidden overlay-enter flex flex-col items-center justify-center p-6 text-center">
-    <div class="relative mb-5">
-      <div id="success-confetti" class="absolute inset-0"></div>
-      <div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center relative" style="animation: successPop .5s cubic-bezier(.2,1.4,.4,1) both; box-shadow: 0 0 36px -4px rgba(16,185,129,0.6);">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
-          <path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-                stroke-dasharray="26" stroke-dashoffset="26" style="animation: drawCheck .4s ease-out .25s forwards;"/>
-        </svg>
+  <!-- ================= ЖИВОЙ СТАТУС ЗАКАЗА =================
+       Весь путь заказа проходит ЗДЕСЬ, внутри мини-аппа, а не в чате бота:
+       оформлен -> ждём оплату (карта + загрузка чека) -> проверяем чек ->
+       выполняется (анимация + пояснения) -> готово (зелёная галочка).
+       Экран сам опрашивает сервер и переключает этапы, пока открыт. -->
+  <div id="order-flow-screen" class="fixed inset-0 bg-background z-50 hidden overflow-y-auto">
+    <div class="min-h-full flex flex-col items-center justify-center text-center px-6"
+         style="padding-top: calc(2rem + var(--safe-top)); padding-bottom: calc(2rem + var(--safe-bottom));">
+
+      <!-- Картинка этапа: галочка / спиннер / крестик — перерисовывается из app.js -->
+      <div id="flow-visual" class="relative mb-5"></div>
+
+      <h2 id="flow-title" class="text-[19px] font-bold mb-1">—</h2>
+      <p id="flow-subtitle" class="text-[12px] text-gray-400 mb-4 max-w-xs leading-snug">—</p>
+
+      <!-- Полоска этапов: видно, где заказ сейчас и сколько осталось -->
+      <div id="flow-steps" class="flex items-center justify-center gap-1 mb-5 w-full max-w-xs"></div>
+
+      <div class="glass-card rounded-[20px] p-4 w-full max-w-xs text-left space-y-2 mb-4">
+        <div class="flex justify-between text-xs gap-2"><span class="text-gray-400 flex-shrink-0" data-i18n="order_success_item">Товар</span><span id="success-item" class="font-semibold text-white text-right">—</span></div>
+        <div class="flex justify-between text-xs gap-2"><span class="text-gray-400 flex-shrink-0" data-i18n="order_success_recipient">Получатель</span><span id="success-recipient" class="font-semibold text-white text-right">—</span></div>
+        <div class="flex justify-between text-xs pt-2 border-t border-white/[0.08] gap-2"><span class="text-gray-400 font-semibold flex-shrink-0" data-i18n="order_success_total">Сумма</span><span id="success-price" class="font-bold text-neon-yellow text-right">—</span></div>
       </div>
-    </div>
-    <h2 class="text-[19px] font-bold mb-1" data-i18n="order_success_title">Buyurtma muvaffaqiyatli qabul qilindi</h2>
-    <p class="text-[12px] text-gray-400 mb-5" data-i18n="order_success_hint">Tez orada tasdiqlaymiz — natija shu botda yoziladi.</p>
 
-    <div class="glass-card rounded-[20px] p-4 w-full max-w-xs text-left space-y-2 mb-6">
-      <div class="flex justify-between text-xs"><span class="text-gray-400" data-i18n="order_success_item">Товар</span><span id="success-item" class="font-semibold text-white text-right ml-2">—</span></div>
-      <div class="flex justify-between text-xs"><span class="text-gray-400" data-i18n="order_success_recipient">Получатель</span><span id="success-recipient" class="font-semibold text-white">—</span></div>
-      <div class="flex justify-between text-xs pt-2 border-t border-white/[0.08]"><span class="text-gray-400 font-semibold" data-i18n="order_success_total">Сумма</span><span id="success-price" class="font-bold text-neon-yellow">—</span></div>
-    </div>
+      <!-- Что нужно сделать прямо сейчас: реквизиты и чек, ссылка аренды,
+           причина отказа — наполняется в app.js по текущему статусу -->
+      <div id="flow-action" class="w-full max-w-xs mb-4"></div>
 
-    <button onclick="successGoTarix()" class="w-full max-w-xs py-3.5 rounded-2xl btn-primary press font-semibold text-white text-sm mb-2.5" data-i18n="order_success_history">Tarixni ko'rish</button>
-    <button onclick="successBuyMore()" class="w-full max-w-xs py-3.5 rounded-2xl pill press font-semibold text-sm mb-2.5" data-i18n="order_success_more">Yana xarid qilish</button>
-    <button onclick="successGoHome()" class="w-full max-w-xs py-3 text-gray-400 text-xs" data-i18n="order_success_home">Asosiy sahifa</button>
+      <div id="flow-buttons" class="w-full max-w-xs"></div>
+    </div>
   </div>
+
+  <!-- Тост "добавлено в корзину" — короткое подтверждение действия,
+       без него непонятно, сработала ли кнопка -->
+  <div id="toast" class="hidden fixed left-1/2 -translate-x-1/2 z-[60] glass-card rounded-2xl px-4 py-2.5 text-[13px] font-semibold text-white"
+       style="bottom: calc(6.5rem + var(--safe-bottom)); box-shadow: 0 14px 34px -12px rgba(0,0,0,0.8);"></div>
 
 <script src="app.js"></script>
 </body>

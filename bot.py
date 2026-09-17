@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import config
 from database.db import init_db, expire_stale_unpaid_orders
 from services.stats_api import start_stats_server
-from handlers import user, admin, order, payment, webapp, support, rent_link, sms_payment
+from handlers import user, admin, order, payment, webapp, support, rent_link, sms_payment, cart
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,13 +23,26 @@ async def _expire_stale_orders_loop(bot: Bot):
     while True:
         try:
             expired = await expire_stale_unpaid_orders()
+            # Товары одной корзины просрочиваются все разом — шлём ОДНО
+            # сообщение на корзину, а не по сообщению на каждый товар.
+            notified_carts = set()
             for order in expired:
-                try:
-                    await bot.send_message(
-                        order["user_id"],
-                        f"⌛ Заказ #{order['id']} отменён — истекло время на оплату. "
-                        "Если ещё актуально, оформите заново через /start.",
+                cart_id = order.get("cart_id")
+                if cart_id:
+                    if cart_id in notified_carts:
+                        continue
+                    notified_carts.add(cart_id)
+                    text = (
+                        "⌛ Корзина отменена — истекло время на оплату. "
+                        "Если ещё актуально, соберите заново в магазине."
                     )
+                else:
+                    text = (
+                        f"⌛ Заказ #{order['id']} отменён — истекло время на оплату. "
+                        "Если ещё актуально, оформите заново через /start."
+                    )
+                try:
+                    await bot.send_message(order["user_id"], text)
                 except Exception:
                     pass
         except Exception as e:
@@ -51,6 +64,9 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(support.router)
     dp.include_router(webapp.router)
+    # Корзина — раньше order/payment: у неё свои callback'и (cart:confirm),
+    # и они не должны спорить с подтверждением одиночного заказа.
+    dp.include_router(cart.router)
     dp.include_router(order.router)
     dp.include_router(payment.router)
     dp.include_router(user.router)

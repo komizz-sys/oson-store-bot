@@ -109,6 +109,16 @@ def confirm_order_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def confirm_cart_kb() -> InlineKeyboardMarkup:
+    """Подтверждение корзины — отдельные callback'и, чтобы не пересекаться с
+    подтверждением одиночного заказа (у него своё состояние и свой обработчик)."""
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Подтвердить", callback_data="cart:confirm")
+    b.button(text="❌ Отмена", callback_data="cart:cancel")
+    b.adjust(2)
+    return b.as_markup()
+
+
 def payment_methods_kb() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="💳 Оплатить и прислать чек", callback_data="pay:manual")

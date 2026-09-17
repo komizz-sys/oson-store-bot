@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.db import create_order, allocate_unique_amount, set_expected_amount
+from services.order_processing import create_order_from_draft
 from handlers.states import OrderStates
 from keyboards.user_kb import stars_kb, premium_kb, confirm_order_kb, payment_methods_kb
 from services.prices import get_stars_packages, get_premium_packages, format_uzs
@@ -241,39 +242,28 @@ async def cancel_order(call: CallbackQuery, state: FSMContext):
 async def confirm_order(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    order_id = await create_order(
-        user_id=call.from_user.id,
-        username=call.from_user.username or "",
-        category=data["category"],
-        item_name=data["item_name"],
-        quantity=data.get("quantity", 1),
-        price_uzs=data["price"],
-        recipient=data["recipient"],
-        recipient_user_id=data.get("recipient_user_id"),
-        rent_days=data.get("rent_days"),
-        nft_address=data.get("nft_address"),
-        base_price_per_day_gram=str(data.get("base_price_per_day_gram", "")) or None,
+    # Создание заказа и выдача суммы к оплате — общая функция с путём
+    # "оформление прямо в витрине", чтобы логика не разъехалась на две копии.
+    created = await create_order_from_draft(
+        call.bot, call.from_user.id, call.from_user.username, data
     )
+    order_id = created["order_id"]
+
     await state.update_data(order_id=order_id)
     await state.set_state(OrderStates.waiting_payment_proof)
 
     import config
 
-    # Уникальная сумма (базовая цена + небольшая случайная надбавка) — чтобы
-    # можно было понять, чей это платёж, по одной только сумме поступления на
-    # карту (нужно для автопроверки оплаты, см. config.SMS_RELAY_CHAT_ID).
-    if config.UNIQUE_AMOUNT_ENABLED:
-        pay_amount = await allocate_unique_amount(data["price"], config.UNIQUE_AMOUNT_MAX_OFFSET)
-        await set_expected_amount(order_id, pay_amount)
+    lang = await get_user_language(call.from_user.id)
+    if config.UNIQUE_AMOUNT_ENABLED and created["pay_amount"] != created["price"]:
         amount_note = (
-            f"\n\n⚠️ Переведите <b>ровно {format_uzs(pay_amount)}</b> — не округляйте и не "
+            f"\n\n⚠️ Переведите <b>ровно {format_uzs(created['pay_amount'])}</b> — не округляйте и не "
             "меняйте сумму, иначе оплата не подтвердится автоматически."
+            + t(lang, "pay_commission_note")
         )
     else:
-        pay_amount = data["price"]
         amount_note = ""
 
-    lang = await get_user_language(call.from_user.id)
     await call.message.edit_text(
         t(lang, "order_created").format(order_id=order_id, price=format_uzs(data["price"]))
         + t(lang, "order_pay_card")

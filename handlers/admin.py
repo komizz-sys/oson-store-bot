@@ -3,6 +3,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, LabeledPrice
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
 import base64
 import io
@@ -10,7 +11,10 @@ import io
 import httpx
 
 import config
-from database.db import get_order, set_order_status, get_stats, get_all_user_ids
+from database.db import (
+    get_order, set_order_status, get_stats, get_all_user_ids,
+    get_cart_orders, set_cart_status,
+)
 from keyboards.admin_kb import admin_fulfill_kb
 from services.prices import format_uzs
 from services.fragment_service import try_auto_fulfill_stars, notify_manual_premium
@@ -77,6 +81,24 @@ async def get_file_id_video(message: Message, state: FSMContext):
 @router.message(GetFileIdStates.waiting_file)
 async def get_file_id_wrong_type(message: Message):
     await message.answer("Это не видео. Пришли именно видеофайл (или /cancel).")
+
+
+@router.message(Command("chatid"))
+async def chat_id_cmd(message: Message):
+    """
+    Показывает ID ТЕКУЩЕГО чата. Нужен при настройке автопроверки оплаты:
+    добавляешь бота в группу, куда пересылаются SMS от банка, пишешь там
+    /chatid — и вписываешь полученное число в переменную SMS_RELAY_CHAT_ID
+    на Railway. У групп ID отрицательный (например -1001234567890) — это нормально.
+    """
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer(
+        f"🆔 ID этого чата: <code>{message.chat.id}</code>\n"
+        f"Тип: {message.chat.type}\n\n"
+        "Для автопроверки оплаты по SMS впиши это число в переменную "
+        "<code>SMS_RELAY_CHAT_ID</code> (Railway → сервис Worker → Variables)."
+    )
 
 
 @router.message(Command("cleargifts"))
@@ -276,6 +298,7 @@ async def admin_help(message: Message):
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
+        "/chatid — ID текущего чата (нужен для SMS_RELAY_CHAT_ID)\n"
         "/topup &lt;кол-во⭐&gt; — пополнить баланс звёзд САМОГО БОТА (нужно, чтобы sendGift "
         "мог реально дарить подарки — см. /topup без аргумента для подробностей)\n\n"
         "Подтверждение/отклонение оплаты — кнопками под чеком."
@@ -409,21 +432,8 @@ async def stats_cmd(message: Message):
     )
 
 
-async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
-    """
-    Всё, что должно произойти, когда оплата заказа подтверждена — неважно,
-    админ нажал «✅ Подтверждено» вручную или это подтвердилось автоматически
-    (по совпадению уникальной суммы с SMS о поступлении на карту).
-    """
-    await set_order_status(order_id, "paid")
-
-    lang = await _get_user_language(order["user_id"])
-    await bot.send_message(
-        order["user_id"],
-        t(lang, "payment_confirmed").format(order_id=order_id),
-    )
-
-    # Отправить видео-инструкцию, если она установлена
+async def _send_attached_content(bot: Bot, order_id: int, order: dict) -> None:
+    """Видео/текст-инструкция, если админ прикрепил их к заказу."""
     if order.get("content_video_url"):
         try:
             await bot.send_video(
@@ -435,7 +445,6 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
         except Exception as e:
             print(f"Ошибка при отправке видео для заказа {order_id}: {e}")
 
-    # Отправить текст-инструкцию, если она установлена
     if order.get("content_text"):
         try:
             await bot.send_message(
@@ -446,14 +455,14 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
         except Exception as e:
             print(f"Ошибка при отправке текста для заказа {order_id}: {e}")
 
-    # Мягкая допродажа смежной категории (купил Stars -> предлагаем Premium и т.д.)
-    try:
-        from services.upsell import send_upsell
-        await send_upsell(bot, order["user_id"], order["category"], lang)
-    except Exception:
-        pass  # апсейл не критичен — не мешаем основному потоку оплаты
 
-    # Выполнение в зависимости от категории
+async def _fulfill_order(bot: Bot, order_id: int, order: dict) -> None:
+    """
+    Само выполнение заказа по его категории. Вынесено отдельно, потому что
+    вызывается из двух мест: обычный заказ (finalize_payment) и каждый товар
+    оплаченной корзины (finalize_cart_payment) — логика выполнения у них
+    одна и та же, отличается только то, что вокруг (сообщения клиенту).
+    """
     if order["category"] == "stars":
         await try_auto_fulfill_stars(bot, order)
 
@@ -464,17 +473,29 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
         await start_rent_payment(
             bot, order, order["nft_address"], float(order["base_price_per_day_gram"]), order["rent_days"]
         )
-        await send_rent_link_tutorial(bot, order)
-        if not config.RENT_TUTORIAL_VIDEO:
-            for admin_id in config.ADMIN_IDS:
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        "⚠️ RENT_TUTORIAL_VIDEO не настроен — клиенту ушёл только текст, "
-                        "без видео. Отправь мне видео через /getfileid, чтобы это исправить.",
-                    )
-                except Exception:
-                    pass
+        if order.get("is_extension"):
+            # Продление: гифт уже подключён к профилю клиента, повторная
+            # tc://-ссылка не нужна — иначе человек получит непонятную
+            # инструкцию "подключите подарок", хотя он у него уже есть.
+            lang = await _get_user_language(order["user_id"])
+            await bot.send_message(
+                order["user_id"],
+                t(lang, "rent_extended").format(
+                    item_name=order["item_name"], days=order["rent_days"]
+                ),
+            )
+        else:
+            await send_rent_link_tutorial(bot, order)
+            if not config.RENT_TUTORIAL_VIDEO:
+                for admin_id in config.ADMIN_IDS:
+                    try:
+                        await bot.send_message(
+                            admin_id,
+                            "⚠️ RENT_TUTORIAL_VIDEO не настроен — клиенту ушёл только текст, "
+                            "без видео. Отправь мне видео через /getfileid, чтобы это исправить.",
+                        )
+                    except Exception:
+                        pass
 
     elif order["category"] == "simple_gift":
         success, note = await fulfill_simple_gift(bot, order)
@@ -492,6 +513,82 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
                 await bot.send_message(admin_id, f"Заказ #{order_id}: {note}")
             except Exception:
                 pass
+
+
+async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
+    """
+    Всё, что должно произойти, когда оплата заказа подтверждена — неважно,
+    админ нажал «✅ Подтверждено» вручную или это подтвердилось автоматически
+    (по совпадению уникальной суммы с SMS о поступлении на карту).
+    """
+    await set_order_status(order_id, "paid")
+
+    lang = await _get_user_language(order["user_id"])
+    await bot.send_message(
+        order["user_id"],
+        t(lang, "payment_confirmed").format(order_id=order_id),
+    )
+
+    await _send_attached_content(bot, order_id, order)
+
+    # Мягкая допродажа смежной категории (купил Stars -> предлагаем Premium и т.д.)
+    try:
+        from services.upsell import send_upsell
+        await send_upsell(bot, order["user_id"], order["category"], lang)
+    except Exception:
+        pass  # апсейл не критичен — не мешаем основному потоку оплаты
+
+    await _fulfill_order(bot, order_id, order)
+
+
+async def finalize_cart_payment(bot: Bot, cart_id: str, cart_orders: list[dict] | None = None) -> None:
+    """
+    Подтверждение оплаты КОРЗИНЫ: товаров несколько, но деньги пришли одни —
+    поэтому клиенту уходит ОДНО сообщение и ОДИН апсейл, а выполняется каждый
+    товар отдельно, своей обычной логикой.
+    """
+    orders = cart_orders if cart_orders is not None else await get_cart_orders(cart_id)
+    if not orders:
+        return
+
+    await set_cart_status(cart_id, "paid")
+
+    user_id = orders[0]["user_id"]
+    lang = await _get_user_language(user_id)
+    items = "\n".join(f"  • {o['item_name']} → {o['recipient']}" for o in orders)
+    try:
+        await bot.send_message(
+            user_id,
+            t(lang, "cart_payment_confirmed").format(count=len(orders)) + f"\n{items}",
+        )
+    except Exception:
+        pass
+
+    # Апсейл — один на всю корзину, по самому дорогому товару в ней
+    # (иначе после корзины из пяти позиций человек получил бы пять реклам).
+    try:
+        from services.upsell import send_upsell
+        top = max(orders, key=lambda o: o["price_uzs"])
+        await send_upsell(bot, user_id, top["category"], lang)
+    except Exception:
+        pass
+
+    for o in orders:
+        o = dict(o, status="paid")
+        await _send_attached_content(bot, o["id"], o)
+        try:
+            await _fulfill_order(bot, o["id"], o)
+        except Exception as e:
+            print(f"[cart {cart_id}] ошибка выполнения заказа #{o['id']}: {e}", flush=True)
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"⚠️ Корзина {cart_id}: заказ #{o['id']} ({o['item_name']}) "
+                        f"не выполнился автоматически: {e}. Выполни вручную.",
+                    )
+                except Exception:
+                    pass
 
 
 @router.callback_query(F.data.startswith("admin:approve:"))
@@ -536,6 +633,57 @@ async def reject_payment(call: CallbackQuery, bot: Bot):
         order["user_id"],
         t(lang, "order_rejected").format(order_id=order_id),
     )
+
+
+@router.callback_query(F.data.startswith("admin:approve_cart:"))
+async def approve_cart_payment(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    cart_id = call.data.split(":", 2)[2]
+    orders = await get_cart_orders(cart_id)
+    if not orders:
+        await call.answer("Корзина не найдена", show_alert=True)
+        return
+
+    # Кнопки "Заказ выполнен" — по одной на товар: выполняются они всё-таки
+    # по отдельности (звёзды через кошелёк, премиум вручную и т.д.).
+    b = InlineKeyboardBuilder()
+    for o in orders:
+        b.button(text=f"📤 Выполнен: {o['item_name'][:28]}", callback_data=f"admin:done:{o['id']}")
+    b.adjust(1)
+
+    await call.message.edit_caption(
+        caption=(call.message.caption or "") + "\n\n✅ Оплата подтверждена (вся корзина)",
+        reply_markup=b.as_markup(),
+    )
+    await call.answer("Подтверждено")
+
+    await finalize_cart_payment(bot, cart_id, orders)
+
+
+@router.callback_query(F.data.startswith("admin:reject_cart:"))
+async def reject_cart_payment(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    cart_id = call.data.split(":", 2)[2]
+    orders = await get_cart_orders(cart_id)
+    if not orders:
+        await call.answer("Корзина не найдена", show_alert=True)
+        return
+
+    await set_cart_status(cart_id, "rejected", "Оплата не подтверждена")
+    await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n❌ Отклонено (вся корзина)")
+    await call.answer("Отклонено")
+
+    lang = await _get_user_language(orders[0]["user_id"])
+    try:
+        await bot.send_message(orders[0]["user_id"], t(lang, "cart_rejected"))
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("admin:done:"))

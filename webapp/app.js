@@ -84,12 +84,36 @@ const I18N = {
     ao_link_send: "Havolani yuborish", ao_watch_tutorial: "Tutorialni ko'rish (botda)",
     ao_connected: "Sovg'a profilingizga ulandi!",
     ao_err_empty: "Havolani kiriting", ao_err_bad_link: "Havola noto'g'ri. U tc:// bilan boshlanishi kerak.",
-    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.", ao_cancel: "Buyurtmani bekor qilish", ao_cancel_confirm: "Buyurtma bekor qilinsinmi?", ao_pay_title: "To'lovni amalga oshiring", ao_pay_hint: "Kartaga summani o'tkazing va chek skrinshotini shu yerga yuklang.", ao_pay_upload: "Chek skrinshotini yuklash", ao_receipt_sent: "✅ Chek yuborildi! Admin tez orada tekshiradi.", ao_err_too_big: "Fayl juda katta (8 MB gacha).", ao_err_receipt: "Chekni yuborib bo'lmadi, qayta urinib ko'ring.",
+    ao_err_connect: "Ulashda xatolik. Operator tez orada qo'lda ulab beradi.", ao_err_network: "Server bilan bog'lanib bo'lmadi.", ao_cancel: "Buyurtmani bekor qilish", ao_cancel_confirm: "Buyurtma bekor qilinsinmi?", ao_pay_title: "To'lovni amalga oshiring", ao_pay_hint: "Kartaga summani o'tkazing va chek skrinshotini shu yerga yuklang.", ao_pay_upload: "Chek skrinshotini yuklash", ao_receipt_sent: "✅ Chek yuborildi! Admin tez orada tekshiradi.", ao_err_too_big: "Fayl juda katta (8 MB gacha).", ao_err_receipt: "Chekni yuborib bo'lmadi, qayta urinib ko'ring.", ao_err_wrong_status: "Bu buyurtma uchun chek allaqachon yuborilgan.", ao_err_no_image: "Rasmni o'qib bo'lmadi. Galereyadan oddiy rasm (JPG/PNG) tanlang.", ao_err_not_found: "Buyurtma topilmadi.",
     profile_stats_title: "Mening statistikam", profile_stats_rank: "Reyting o'rningiz", profile_stats_total: "Jami xarid",
     history_loading: "Yuklanmoqda...", history_open_bot: "Ochish uchun botni Telegram ichida oching.",
     order_success_title: "Buyurtma muvaffaqiyatli qabul qilindi", order_success_hint: "Tez orada tasdiqlaymiz — natija shu botda yoziladi.",
     order_success_item: "Mahsulot", order_success_recipient: "Qabul qiluvchi", order_success_total: "Summa",
     order_success_history: "Tarixni ko'rish", order_success_more: "Yana xarid qilish", order_success_home: "Asosiy sahifa",
+    nav_cart: "Savat", cart_title: "Savat", cart_empty: "Savat bo'sh", cart_empty_hint: "Mahsulot tanlang va \"Savatga\" tugmasini bosing.",
+    cart_add: "Savatga", cart_added: "Savatga qo'shildi ✅", cart_buy_now: "Hozir to'lash",
+    cart_total: "Jami", cart_pay: "Hammasini to'lash", cart_clear: "Savatni tozalash",
+    cart_clear_confirm: "Savatni tozalaymizmi?", cart_to_self: "O'zimga", cart_to: "Kimga",
+    cart_items_suffix: "ta mahsulot", cart_go_shop: "Do'konga o'tish",
+    cart_pay_hint: "Kartaga jami summani bitta o'tkazma bilan yuboring, so'ng \"To'ladim\" tugmasini bosing.",
+    cart_err_generic: "Buyurtmani yuborib bo'lmadi, qayta urinib ko'ring.",
+    cart_err_no_username: "Sizda public username yo'q. Telegram sozlamalaridan o'rnating yoki \"Do'stimga\" tanlang.",
+    cart_active_title: "Savat",
+    cart_success_hint: "Buyurtmani tasdiqlash uchun bot chatini oching — u yerda \"Tasdiqlash\" tugmasini bosing.",
+    flow_step_created: "Qabul qilindi", flow_step_payment: "To'lov", flow_step_doing: "Bajarilmoqda", flow_step_done: "Tayyor",
+    flow_awaiting_title: "To'lovni kutyapmiz", flow_awaiting_sub: "Summani kartaga o'tkazing va chek skrinshotini shu yerga yuklang — qolganini shu oynada ko'rasiz.",
+    flow_review_title: "To'lov tekshirilmoqda", flow_review_sub: "Odatda bir necha daqiqa. Oyna o'zi yangilanadi — yopmasangiz ham bo'ladi.",
+    flow_doing_title: "Buyurtma bajarilmoqda", flow_doing_sub: "Allaqachon ish boshladik. Tayyor bo'lishi bilan shu yerda ko'rasiz.",
+    flow_done_title: "Bajarildi!", flow_done_sub: "Buyurtmangiz yakunlandi. Xaridingiz uchun rahmat 🙌",
+    flow_rejected_title: "Buyurtma bekor qilindi", flow_rejected_sub: "To'lov tasdiqlanmadi. Operatorga yozing yoki qayta urinib ko'ring.",
+    flow_pay_exact: "Aynan shu summani o'tkazing:",
+    flow_commission_note: "Agar bankingiz o'tkazma uchun komissiya olsa — uni summa USTIGA qo'shing. Kartaga aynan shu summa tushishi kerak, aks holda to'lov avtomatik tasdiqlanmaydi.", flow_minimize: "Yopish (do'konga qaytish)", flow_write_operator: "Operatorga yozish",
+    flow_tips: ["Qabul qiluvchi tekshirilmoqda…", "Buyurtma tayyorlanmoqda…", "Yetkazib berilmoqda…", "Deyarli tayyor…"],
+    rentals_title: "Mening ijaralarim", rentals_empty: "Aktiv ijara yo'q.",
+    rent_ends_in: "Tugashiga", rent_days_short: "kun", rent_hours_short: "soat",
+    rent_extend: "Uzaytirish", rent_extend_title: "Ijarani uzaytirish", rent_extend_days: "Necha kunga uzaytiramiz?",
+    rent_extend_until: "Yangi tugash sanasi", rent_extend_note: "Sovg'a profilingizda qoladi — havolani qayta yuborish shart emas.",
+    rent_ending_soon: "Tez orada tugaydi!",
   },
   ru: {
     ijara_title: "Аренда гифтов", history_title: "История покупок",
@@ -125,12 +149,36 @@ const I18N = {
     ao_link_send: "Отправить ссылку", ao_watch_tutorial: "Посмотреть инструкцию (в боте)",
     ao_connected: "Подарок подключён к профилю!",
     ao_err_empty: "Введите ссылку", ao_err_bad_link: "Неверная ссылка. Она должна начинаться с tc://",
-    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.", ao_cancel: "Отменить заказ", ao_cancel_confirm: "Отменить заказ?", ao_pay_title: "Оплатите заказ", ao_pay_hint: "Переведите сумму на карту и загрузите сюда скриншот чека.", ao_pay_upload: "Загрузить скриншот чека", ao_receipt_sent: "✅ Чек отправлен! Админ скоро проверит.", ao_err_too_big: "Файл слишком большой (до 8 МБ).", ao_err_receipt: "Не удалось отправить чек, попробуйте ещё раз.",
+    ao_err_connect: "Ошибка подключения. Оператор скоро подключит вручную.", ao_err_network: "Не удалось связаться с сервером.", ao_cancel: "Отменить заказ", ao_cancel_confirm: "Отменить заказ?", ao_pay_title: "Оплатите заказ", ao_pay_hint: "Переведите сумму на карту и загрузите сюда скриншот чека.", ao_pay_upload: "Загрузить скриншот чека", ao_receipt_sent: "✅ Чек отправлен! Админ скоро проверит.", ao_err_too_big: "Файл слишком большой (до 8 МБ).", ao_err_receipt: "Не удалось отправить чек, попробуйте ещё раз.", ao_err_wrong_status: "Чек по этому заказу уже отправлен.", ao_err_no_image: "Не удалось прочитать изображение. Выберите обычное фото (JPG/PNG).", ao_err_not_found: "Заказ не найден.",
     profile_stats_title: "Моя статистика", profile_stats_rank: "Ваше место в рейтинге", profile_stats_total: "Всего куплено",
     history_loading: "Загрузка...", history_open_bot: "Откройте магазин внутри Telegram, чтобы увидеть историю.",
     order_success_title: "Заказ успешно оформлен", order_success_hint: "Скоро подтвердим — результат придёт в этот же чат.",
     order_success_item: "Товар", order_success_recipient: "Получатель", order_success_total: "Сумма",
     order_success_history: "Смотреть историю", order_success_more: "Купить ещё", order_success_home: "На главную",
+    nav_cart: "Корзина", cart_title: "Корзина", cart_empty: "Корзина пуста", cart_empty_hint: "Выберите товар и нажмите «В корзину».",
+    cart_add: "В корзину", cart_added: "Добавлено в корзину ✅", cart_buy_now: "Оплатить сейчас",
+    cart_total: "Итого", cart_pay: "Оплатить всё", cart_clear: "Очистить корзину",
+    cart_clear_confirm: "Очистить корзину?", cart_to_self: "Себе", cart_to: "Кому",
+    cart_items_suffix: "товар(ов)", cart_go_shop: "Перейти в магазин",
+    cart_pay_hint: "Переведите на карту общую сумму одним платежом и нажмите «Я оплатил».",
+    cart_err_generic: "Не удалось оформить заказ, попробуйте ещё раз.",
+    cart_err_no_username: "У вас нет публичного username. Установите его в настройках Telegram или выберите «Другу».",
+    cart_active_title: "Корзина",
+    cart_success_hint: "Откройте чат бота и нажмите «Подтвердить» — после этого придут реквизиты и сумма.",
+    flow_step_created: "Оформлен", flow_step_payment: "Оплата", flow_step_doing: "Выполняется", flow_step_done: "Готово",
+    flow_awaiting_title: "Ждём оплату", flow_awaiting_sub: "Переведите сумму на карту и загрузите сюда скриншот чека — дальше всё видно в этом окне.",
+    flow_review_title: "Проверяем оплату", flow_review_sub: "Обычно это пара минут. Окно обновится само — можно не закрывать.",
+    flow_doing_title: "Заказ выполняется", flow_doing_sub: "Уже занимаемся вашим заказом. Как будет готово — увидите здесь.",
+    flow_done_title: "Выполнено!", flow_done_sub: "Заказ выполнен. Спасибо за покупку 🙌",
+    flow_rejected_title: "Заказ отменён", flow_rejected_sub: "Оплата не подтверждена. Напишите оператору или оформите заново.",
+    flow_pay_exact: "Переведите ровно:",
+    flow_commission_note: "Если ваш банк берёт комиссию за перевод — добавьте её СВЕРХУ. На карту должна прийти ровно эта сумма, иначе оплата не подтвердится автоматически.", flow_minimize: "Свернуть (вернуться в магазин)", flow_write_operator: "Написать оператору",
+    flow_tips: ["Проверяем получателя…", "Готовим заказ…", "Отправляем…", "Почти готово…"],
+    rentals_title: "Мои аренды", rentals_empty: "Активных аренд нет.",
+    rent_ends_in: "Осталось", rent_days_short: "дн.", rent_hours_short: "ч",
+    rent_extend: "Продлить", rent_extend_title: "Продление аренды", rent_extend_days: "На сколько дней продлить?",
+    rent_extend_until: "Новая дата окончания", rent_extend_note: "Подарок остаётся в профиле — ссылку заново присылать не нужно.",
+    rent_ending_soon: "Скоро закончится!",
   },
   en: {
     ijara_title: "Gift rental", history_title: "Purchase history",
@@ -166,12 +214,36 @@ const I18N = {
     ao_link_send: "Send link", ao_watch_tutorial: "Watch tutorial (in bot)",
     ao_connected: "Gift connected to your profile!",
     ao_err_empty: "Enter the link", ao_err_bad_link: "Invalid link. It should start with tc://",
-    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.", ao_cancel: "Cancel order", ao_cancel_confirm: "Cancel this order?", ao_pay_title: "Pay for your order", ao_pay_hint: "Transfer the amount to the card and upload the receipt screenshot here.", ao_pay_upload: "Upload receipt screenshot", ao_receipt_sent: "✅ Receipt sent! The admin will check it shortly.", ao_err_too_big: "File is too large (max 8 MB).", ao_err_receipt: "Could not send the receipt, please try again.",
+    ao_err_connect: "Connection error. An operator will connect it manually soon.", ao_err_network: "Could not reach the server.", ao_cancel: "Cancel order", ao_cancel_confirm: "Cancel this order?", ao_pay_title: "Pay for your order", ao_pay_hint: "Transfer the amount to the card and upload the receipt screenshot here.", ao_pay_upload: "Upload receipt screenshot", ao_receipt_sent: "✅ Receipt sent! The admin will check it shortly.", ao_err_too_big: "File is too large (max 8 MB).", ao_err_receipt: "Could not send the receipt, please try again.", ao_err_wrong_status: "A receipt for this order was already sent.", ao_err_no_image: "Could not read the image. Pick a regular photo (JPG/PNG).", ao_err_not_found: "Order not found.",
     profile_stats_title: "My stats", profile_stats_rank: "Your rank", profile_stats_total: "Total spent",
     history_loading: "Loading...", history_open_bot: "Open the shop inside Telegram to see your history.",
     order_success_title: "Order placed successfully", order_success_hint: "We'll confirm soon — the result will be posted in this chat.",
     order_success_item: "Item", order_success_recipient: "Recipient", order_success_total: "Total",
     order_success_history: "View history", order_success_more: "Buy more", order_success_home: "Home",
+    nav_cart: "Cart", cart_title: "Cart", cart_empty: "Your cart is empty", cart_empty_hint: "Pick an item and tap \"Add to cart\".",
+    cart_add: "Add to cart", cart_added: "Added to cart ✅", cart_buy_now: "Pay now",
+    cart_total: "Total", cart_pay: "Pay for everything", cart_clear: "Clear cart",
+    cart_clear_confirm: "Clear the cart?", cart_to_self: "Myself", cart_to: "For",
+    cart_items_suffix: "item(s)", cart_go_shop: "Go to shop",
+    cart_pay_hint: "Transfer the total to the card in one payment, then tap \"I've paid\".",
+    cart_err_generic: "Could not place the order, please try again.",
+    cart_err_no_username: "You don't have a public username. Set one in Telegram settings or choose \"A friend\".",
+    cart_active_title: "Cart",
+    cart_success_hint: "Open the bot chat and tap \"Confirm\" — payment details will arrive there.",
+    flow_step_created: "Placed", flow_step_payment: "Payment", flow_step_doing: "In progress", flow_step_done: "Done",
+    flow_awaiting_title: "Waiting for payment", flow_awaiting_sub: "Transfer the amount to the card and upload the receipt here — everything else happens in this window.",
+    flow_review_title: "Checking your payment", flow_review_sub: "Usually a couple of minutes. This screen updates by itself.",
+    flow_doing_title: "Order in progress", flow_doing_sub: "We're working on it. You'll see the result right here.",
+    flow_done_title: "Done!", flow_done_sub: "Your order is complete. Thanks for your purchase 🙌",
+    flow_rejected_title: "Order cancelled", flow_rejected_sub: "The payment wasn't confirmed. Contact the operator or order again.",
+    flow_pay_exact: "Transfer exactly:",
+    flow_commission_note: "If your bank charges a transfer fee, add it ON TOP. Exactly this amount must arrive on the card, otherwise the payment won't be confirmed automatically.", flow_minimize: "Minimize (back to shop)", flow_write_operator: "Contact operator",
+    flow_tips: ["Checking the recipient…", "Preparing your order…", "Delivering…", "Almost there…"],
+    rentals_title: "My rentals", rentals_empty: "No active rentals.",
+    rent_ends_in: "Left", rent_days_short: "d", rent_hours_short: "h",
+    rent_extend: "Extend", rent_extend_title: "Extend rental", rent_extend_days: "Extend by how many days?",
+    rent_extend_until: "New end date", rent_extend_note: "The gift stays on your profile — no need to send the link again.",
+    rent_ending_soon: "Ending soon!",
   },
 };
 
@@ -188,7 +260,8 @@ function applyI18n() {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   });
   renderRentTerms();
-  if (currentTab === "ijara") renderIjara();
+  if (currentTab === "ijara") { renderIjara(); renderMyRentals(); }
+  else if (currentTab === "savat") renderCart();
   else renderItems();
 }
 
@@ -210,6 +283,304 @@ setActiveFlagUI();
 
 /* ---------------- Форматирование ---------------- */
 function fmtUZS(n) { return Math.round(n).toLocaleString("ru-RU").replace(/,/g, " ") + " so'm"; }
+
+/* ---------------- Короткое уведомление (тост) ---------------- */
+let _toastTimer = null;
+function showToast(text) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove("hidden");
+  el.style.animation = "sheetUp .25s cubic-bezier(.2,.9,.25,1) both";
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { el.classList.add("hidden"); }, 1800);
+}
+
+/* ================= КОРЗИНА =================
+ * Хранится в localStorage этого устройства: заказ создаётся на сервере только
+ * в момент оплаты, поэтому корзина — чисто клиентское "черновое" состояние.
+ * Одна строка корзины = один товар с количеством и своим получателем
+ * (можно в одном заказе купить звёзды себе и премиум другу).
+ */
+const CART_KEY = "oson_cart_v1";
+const CART_MAX_LINES = 20;
+const CART_MAX_QTY = 10;
+let cart = [];
+
+function loadCart() {
+  try {
+    const raw = localStorage.getItem(CART_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    cart = Array.isArray(parsed) ? parsed.filter(function(l) { return l && l.kind && l.unitPrice > 0; }) : [];
+  } catch (e) { cart = []; }  // localStorage может быть недоступен — просто пустая корзина
+}
+
+function saveCart() {
+  try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch (e) { /* тихо игнорируем */ }
+  updateCartBadge();
+}
+
+function cartCount() {
+  return cart.reduce(function(sum, l) { return sum + l.qty; }, 0);
+}
+
+function cartTotal() {
+  return cart.reduce(function(sum, l) { return sum + l.unitPrice * l.qty; }, 0);
+}
+
+function updateCartBadge() {
+  const badge = document.getElementById("cart-badge");
+  if (!badge) return;
+  const n = cartCount();
+  badge.textContent = n > 99 ? "99+" : String(n);
+  badge.classList.toggle("hidden", n === 0);
+}
+
+/** Одинаковый товар одному и тому же получателю не плодит строки — растёт количество. */
+function cartLineKey(line) {
+  return [line.kind, line.itemName, line.giftId || "", line.starsAmount || "", line.recipientType, line.recipient || "", line.note || ""].join("|");
+}
+
+function addToCart(line) {
+  const key = cartLineKey(line);
+  const existing = cart.filter(function(l) { return cartLineKey(l) === key; })[0];
+  if (existing) {
+    existing.qty = Math.min(existing.qty + line.qty, CART_MAX_QTY);
+  } else {
+    if (cart.length >= CART_MAX_LINES) return false;
+    cart.push(line);
+  }
+  saveCart();
+  return true;
+}
+
+function cartChangeQty(index, delta) {
+  const line = cart[index];
+  if (!line) return;
+  const next = line.qty + delta;
+  if (next < 1) { cartRemove(index); return; }
+  if (next > CART_MAX_QTY) return;
+  line.qty = next;
+  saveCart();
+  renderCart();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+}
+
+function cartRemove(index) {
+  cart.splice(index, 1);
+  saveCart();
+  renderCart();
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+}
+
+function clearCart() {
+  cart = [];
+  saveCart();
+  renderCart();
+}
+
+/**
+ * Кладёт в корзину товар, открытый сейчас в модалке оплаты (со всеми
+ * выбранными в ней параметрами: получатель, сообщение, количество подарков).
+ */
+function addActiveItemToCart() {
+  const item = activeItem;
+  if (!item) return;
+  if (["stars", "stars_custom", "premium", "simple_gift"].indexOf(item.kind) === -1) return;
+
+  const errorEl = document.getElementById("modal-error");
+  let friendUsername = document.getElementById("gift-username").value.trim();
+  if (recipientType === "friend") {
+    if (!friendUsername) { errorEl.textContent = t("err_username"); errorEl.classList.remove("hidden"); return; }
+    if (friendUsername.charAt(0) !== "@") friendUsername = "@" + friendUsername;
+    saveRecentRecipient(friendUsername);
+  }
+
+  const note = document.getElementById("gift-message").value.trim();
+  const line = {
+    uid: "c" + Date.now() + Math.random().toString(16).slice(2, 6),
+    kind: item.kind,
+    emoji: item.emoji,
+    image: item.image || null,
+    qty: 1,
+    unitPrice: item.price,
+    recipientType: recipientType,
+    recipient: recipientType === "friend" ? friendUsername : "",
+    note: note,
+  };
+
+  if (item.kind === "stars") {
+    line.starsAmount = item.raw.amount;
+    line.itemName = item.raw.amount + " звёзд";
+    line.title = item.raw.amount.toLocaleString("ru-RU").replace(/,/g, " ") + " ⭐️";
+  } else if (item.kind === "stars_custom") {
+    line.starsAmount = item.raw.qty;
+    line.itemName = item.raw.qty + " звёзд";
+    line.title = item.raw.qty + " ⭐️";
+    line.unitPrice = item.price;
+  } else if (item.kind === "premium") {
+    line.itemName = "Premium — " + item.raw.label;
+    line.title = "💎 " + item.raw.label;
+  } else if (item.kind === "simple_gift") {
+    line.giftId = item.raw.id;
+    line.itemName = "Подарок " + item.emoji + " (" + item.raw.star_count + "⭐)";
+    line.title = item.emoji + " " + item.raw.star_count + "⭐";
+    line.qty = giftQty;                 // количество, выбранное в модалке
+    line.unitPrice = item.raw.price_uzs;  // цена за ОДНУ штуку
+  }
+
+  if (!addToCart(line)) { showToast("🛒 " + t("cart_title") + " — max " + CART_MAX_LINES); return; }
+
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+  closeModal();
+  showToast(t("cart_added"));
+}
+
+function cartLineLabel(line) {
+  if (line.recipientType === "friend" && line.recipient) return line.recipient;
+  return t("cart_to_self");
+}
+
+function renderCart() {
+  const listEl = document.getElementById("cart-list");
+  const checkoutEl = document.getElementById("cart-checkout");
+  const clearBtn = document.getElementById("cart-clear-btn");
+  if (!listEl) return;
+
+  if (!cart.length) {
+    listEl.innerHTML =
+      '<div class="glass-card rounded-[22px] p-8 text-center text-gray-400">' +
+        '<p class="text-3xl mb-2">🛒</p>' +
+        '<p class="text-[14px] font-semibold text-white mb-1">' + t("cart_empty") + '</p>' +
+        '<p class="text-[12px] mb-4">' + t("cart_empty_hint") + '</p>' +
+        '<button onclick="switchTab(\'asosiy\')" class="press pill-gold rounded-xl px-4 py-2 text-[12px] font-semibold">' + t("cart_go_shop") + '</button>' +
+      '</div>';
+    checkoutEl.classList.add("hidden");
+    clearBtn.classList.add("hidden");
+    return;
+  }
+
+  listEl.innerHTML = cart.map(function(line, i) {
+    const iconHTML = line.image
+      ? '<img src="' + line.image + '" class="w-12 h-12 rounded-xl object-cover flex-shrink-0" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center text-xl flex-shrink-0\',textContent:\'' + line.emoji + '\'}))" />'
+      : '<div class="w-12 h-12 rounded-xl bg-white/[0.06] flex items-center justify-center text-xl flex-shrink-0">' + line.emoji + '</div>';
+
+    return '<div class="glass-card rounded-[20px] p-3 flex items-center gap-3">' +
+      iconHTML +
+      '<div class="min-w-0 flex-1">' +
+        '<div class="text-[13px] font-semibold text-white truncate">' + line.title + '</div>' +
+        '<div class="text-[10px] text-gray-500 truncate">' + t("cart_to") + ': ' + cartLineLabel(line) + '</div>' +
+        '<div class="text-[12px] font-bold text-neon-yellow mt-0.5">' + fmtUZS(line.unitPrice * line.qty) + '</div>' +
+      '</div>' +
+      '<div class="flex flex-col items-end gap-1.5 flex-shrink-0">' +
+        '<button onclick="cartRemove(' + i + ')" class="press text-gray-500 text-[15px] leading-none px-1">✕</button>' +
+        '<div class="flex items-center gap-2 bg-white/[0.05] rounded-xl px-1.5 py-1">' +
+          '<button onclick="cartChangeQty(' + i + ',-1)" class="press w-6 h-6 rounded-lg bg-white/10 text-white text-sm font-bold leading-none">−</button>' +
+          '<span class="text-[12px] font-bold w-4 text-center">' + line.qty + '</span>' +
+          '<button onclick="cartChangeQty(' + i + ',1)" class="press w-6 h-6 rounded-lg bg-white/10 text-white text-sm font-bold leading-none">+</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+
+  document.getElementById("cart-total").textContent = fmtUZS(cartTotal());
+  checkoutEl.classList.remove("hidden");
+  clearBtn.classList.remove("hidden");
+
+  getPaymentInfo().then(function(pay) {
+    document.getElementById("cart-card-number").textContent = pay.card_number || "—";
+    document.getElementById("cart-card-holder").textContent = pay.card_holder || "—";
+  }).catch(function() { /* реквизиты просто останутся прочерком */ });
+}
+
+/** Отправка всей корзины одним заказом — одна сумма, один чек. */
+let cartOrderInFlight = false;
+async function submitCartOrder() {
+  if (cartOrderInFlight || !cart.length) return;
+  const errorEl = document.getElementById("cart-error");
+  const btn = document.getElementById("cart-pay-btn");
+  errorEl.classList.add("hidden");
+
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) {
+    errorEl.textContent = t("history_open_bot");
+    errorEl.classList.remove("hidden");
+    return;
+  }
+
+  const items = cart.map(function(line) {
+    return {
+      category: line.kind,
+      item_name: line.itemName,
+      price: line.unitPrice,
+      quantity: line.qty,
+      stars_amount: line.starsAmount,
+      gift_id: line.giftId,
+      recipient: line.recipient,
+      recipient_type: line.recipientType,
+      note: line.note || undefined,
+    };
+  });
+
+  cartOrderInFlight = true;
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
+
+  try {
+    const res = await fetch(base + "/public/place_cart_order", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, items: items }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      errorEl.textContent = data.error === "no_username" ? t("cart_err_no_username") : t("cart_err_generic");
+      errorEl.classList.remove("hidden");
+      return;
+    }
+    // Корзина оформлена одним заказом — очищаем её и переходим на экран
+    // живого статуса, дальше всё происходит там же, внутри витрины.
+    const total = cartTotal();
+    const count = cartCount();
+    clearCart();
+    openOrderFlow({ cart_id: data.cart_id, order_id: data.order_id }, {
+      order_id: data.order_id,
+      cart_id: data.cart_id,
+      item_name: "🛒 " + count + " " + t("cart_items_suffix"),
+      recipient: "",
+      price_uzs: total,
+      pay_amount: data.pay_amount,
+      card_number: data.card_number,
+      card_holder: data.card_holder,
+    });
+  } catch (e) {
+    errorEl.textContent = t("ao_err_network");
+    errorEl.classList.remove("hidden");
+  } finally {
+    cartOrderInFlight = false;
+    btn.disabled = false;
+    btn.innerHTML = prev;
+  }
+}
+
+/**
+ * Подтверждение действия. В Telegram лучше спрашивать его нативным
+ * showConfirm — обычный window.confirm в WebView клиента может быть
+ * заблокирован, и тогда кнопка молча ничего не делала бы.
+ */
+function askConfirm(text, onYes) {
+  if (tg && tg.showConfirm) { tg.showConfirm(text, function(ok) { if (ok) onYes(); }); return; }
+  if (confirm(text)) onYes();
+}
+
+loadCart();
+updateCartBadge();
+
+document.getElementById("cart-clear-btn").addEventListener("click", function() {
+  if (!cart.length) return;
+  askConfirm(t("cart_clear_confirm"), clearCart);
+});
 
 /* ---------------- Загрузка каталога ---------------- */
 const catalog = { stars: [], premium: [], simple_gift: [], nft_rent: [] };
@@ -610,7 +981,7 @@ function setCategory(cat) {
 
 function switchTab(tab) {
   currentTab = tab;
-  ["asosiy","ijara","tarix","top","profil"].forEach(function(x) {
+  ["asosiy","ijara","savat","tarix","top","profil"].forEach(function(x) {
     document.getElementById("view-" + x).classList.add("view-hidden");
   });
   document.getElementById("view-" + tab).classList.remove("view-hidden");
@@ -619,7 +990,8 @@ function switchTab(tab) {
   });
   document.getElementById("tab-" + tab).classList.remove("text-gray-500");
   document.getElementById("tab-" + tab).classList.add("text-neon-blue");
-  if (tab === "ijara") renderIjara();
+  if (tab === "ijara") { renderIjara(); renderMyRentals(); }
+  if (tab === "savat") renderCart();
   if (tab === "tarix") renderHistory();
   if (tab === "top") renderLeaderboard(currentTopPeriod);
   if (tab === "profil") { initProfile(); renderProfileStats(); }
@@ -670,13 +1042,32 @@ function saveRecentRecipient(username) {
 }
 
 function stepDays(delta) {
-  if (!activeItem || activeItem.kind !== "nft_rent") return;
-  const min = activeItem.raw.min_duration_days, max = activeItem.raw.max_duration_days;
+  if (!activeItem) return;
+  let min, max;
+  if (activeItem.kind === "nft_rent") {
+    min = activeItem.raw.min_duration_days; max = activeItem.raw.max_duration_days;
+  } else if (activeItem.kind === "nft_rent_extend") {
+    min = activeItem.raw.min_days; max = activeItem.raw.max_days;
+  } else {
+    return;
+  }
   const next = rentDays + delta;
   if (next < min || next > max) return;
   rentDays = next;
   document.getElementById("days-value").textContent = rentDays;
   document.getElementById("modal-price").textContent = fmtUZS(activeItem.price * rentDays);
+  if (activeItem.kind === "nft_rent_extend") updateExtendUntilLabel();
+}
+
+/** Показывает, до какой даты сдвинется аренда при выбранном числе дней. */
+function updateExtendUntilLabel() {
+  const el = document.getElementById("extend-note");
+  if (!el || !activeItem || activeItem.kind !== "nft_rent_extend") return;
+  const ends = new Date(String(activeItem.raw.ends_at).replace(" ", "T") + "Z");
+  const newEnds = new Date(ends.getTime() + rentDays * 86400000);
+  el.innerHTML = t("rent_extend_note") +
+    '<br><span class="text-white font-semibold">' + t("rent_extend_until") + ": " +
+    newEnds.toISOString().slice(0, 10) + '</span>';
 }
 
 const GIFT_QTY_MAX = 10;
@@ -709,7 +1100,9 @@ async function openCustomStarsModal() {
 
 async function openModal(item) {
   activeItem = item;
-  rentDays = item.kind === "nft_rent" ? item.raw.min_duration_days : 1;
+  if (item.kind === "nft_rent") rentDays = item.raw.min_duration_days;
+  else if (item.kind === "nft_rent_extend") rentDays = item.raw.min_days || 1;
+  else rentDays = 1;
 
   document.getElementById("modal-title").textContent = item.title + (item.raw && item.raw.number ? " #" + item.raw.number : "");
   const emojiEl = document.getElementById("modal-emoji");
@@ -721,14 +1114,28 @@ async function openModal(item) {
     emojiEl.className = "text-4xl animated-gift";
     emojiEl.textContent = item.emoji;
   }
-  document.getElementById("modal-price").textContent = fmtUZS(item.kind === "nft_rent" ? item.price * rentDays : item.price);
+  const isRentLike = item.kind === "nft_rent" || item.kind === "nft_rent_extend";
+  document.getElementById("modal-price").textContent = fmtUZS(isRentLike ? item.price * rentDays : item.price);
   document.getElementById("gift-message").value = "";
   document.getElementById("gift-username").value = "";
   document.getElementById("modal-error").classList.add("hidden");
   setRecipient("self");
 
-  document.getElementById("rent-days-field").classList.toggle("hidden", item.kind !== "nft_rent");
-  if (item.kind === "nft_rent") document.getElementById("days-value").textContent = rentDays;
+  // Продление: получателя выбирать не нужно — подарок уже у клиента в профиле
+  const isExtend = item.kind === "nft_rent_extend";
+  document.getElementById("recipient-field").classList.toggle("hidden", isExtend);
+  if (isExtend) document.getElementById("username-field").classList.add("hidden");
+  const extendNote = document.getElementById("extend-note");
+  extendNote.classList.toggle("hidden", !isExtend);
+  if (isExtend) updateExtendUntilLabel();
+
+  // "В корзину" — только для обычных товаров: у аренды свой срок и комиссия сети
+  const addCartBtn = document.getElementById("add-to-cart-btn");
+  const cartable = ["stars", "stars_custom", "premium", "simple_gift"].indexOf(item.kind) !== -1;
+  addCartBtn.classList.toggle("hidden", !cartable);
+
+  document.getElementById("rent-days-field").classList.toggle("hidden", !isRentLike);
+  if (isRentLike) document.getElementById("days-value").textContent = rentDays;
 
   document.getElementById("gift-quantity-field").classList.toggle("hidden", item.kind !== "simple_gift");
   if (item.kind === "simple_gift") {
@@ -916,9 +1323,20 @@ function sendPaymentInfo() {
     payload.quantity = giftQty;
     payload.gift_id = item.raw.id;
   } else if (item.kind === "nft_rent") {
+    // БАГ БЫЛ ЗДЕСЬ: цену для аренды не клали в payload вообще, и экран после
+    // оформления показывал "0 so'm". Точную сумму (с комиссией сети) всё равно
+    // считает сервер, но и здесь она теперь не нулевая.
+    payload.price = item.price * rentDays;
     payload.item_name = item.raw.name; payload.nft_address = item.raw.nft_address;
     payload.base_price_per_day_gram = item.raw.base_price_per_day_gram;
     payload.min_days = item.raw.min_duration_days; payload.max_days = item.raw.max_duration_days;
+    payload.days = rentDays;
+  } else if (item.kind === "nft_rent_extend") {
+    // Продление: серверу достаточно адреса гифта и числа дней — цену и права
+    // на эту аренду он берёт из собственной базы, данным клиента тут не верим.
+    payload.price = item.price * rentDays;
+    payload.item_name = item.raw.item_name;
+    payload.nft_address = item.raw.nft_address;
     payload.days = rentDays;
   }
 
@@ -963,21 +1381,30 @@ async function submitOrder(payload) {
   }
 
   try {
-    const res = await fetch(base + "/public/create_order", {
+    // БЫЛО: /public/create_order — бот присылал в ЧАТ вопрос «Всё верно?»,
+    // и покупка обрывалась на середине: человек должен был выйти из витрины
+    // в переписку. Теперь заказ создаётся сразу, а витрина сама ведёт клиента
+    // по этапам (оплата -> проверка -> выполнение -> готово).
+    const res = await fetch(base + "/public/place_order", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ initData: tg.initData, payload: payload }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {
-      errorEl.textContent = data.error || "Xatolik yuz berdi, qayta urinib ko'ring.";
+      errorEl.textContent = data.error === "no_username" ? t("cart_err_no_username")
+        : (data.error || "Xatolik yuz berdi, qayta urinib ko'ring.");
       errorEl.classList.remove("hidden");
       return;
     }
-    // БЫЛО: tg.close() — мини-апп закрывался, человек терял контекст покупки.
-    // Теперь показываем экран успеха ВНУТРИ мини-аппа данными, которые уже
-    // есть на клиенте (create_order ничего, кроме {ok:true}, не возвращает —
-    // не выдумываем несуществующий order_id/status от бэкенда).
-    showOrderSuccess(payload);
+    openOrderFlow({ order_id: data.order_id }, {
+      order_id: data.order_id,
+      item_name: data.item_name || payload.item_name,
+      recipient: data.recipient || payload.recipient,
+      price_uzs: data.price_uzs,
+      pay_amount: data.pay_amount,
+      card_number: data.card_number,
+      card_holder: data.card_holder,
+    });
   } catch (e) {
     errorEl.textContent = "Server bilan bog'lanib bo'lmadi, qayta urinib ko'ring.";
     errorEl.classList.remove("hidden");
@@ -1005,31 +1432,344 @@ function launchSuccessConfetti() {
   box.innerHTML = html;
 }
 
-function showOrderSuccess(payload) {
-  document.getElementById("success-item").textContent = payload.item_name || "—";
-  document.getElementById("success-recipient").textContent = payload.recipient || "—";
-  document.getElementById("success-price").textContent = fmtUZS(payload.price || 0);
+/* ================= ЖИВОЙ СТАТУС ЗАКАЗА =================
+ * Раньше витрина показывала «заказ принят» и на этом заканчивалась: всё
+ * остальное (оплата, подтверждение, выполнение) человек видел только в чате
+ * бота. Теперь весь путь заказа проходит здесь — экран сам опрашивает сервер
+ * и переключает этапы: ждём оплату -> проверяем чек -> выполняется -> готово.
+ */
+const FLOW_POLL_MS = 5000;
+let flowOrder = null;      // {order_id, cart_id}
+let flowStatus = null;     // последний ответ сервера
+let flowSignature = null;  // отпечаток последнего отрисованного состояния
+let flowTimer = null;
+let flowTipTimer = null;
+
+const FLOW_STEP_BY_STATUS = {
+  awaiting_payment: 1, payment_review: 2, paid: 3, fulfilling: 3, completed: 4, rejected: 0,
+};
+
+function openOrderFlow(ref, optimistic) {
+  flowOrder = { order_id: ref.order_id || null, cart_id: ref.cart_id || null };
+  flowSignature = null;
   closeModal();
-  document.getElementById("order-success-screen").classList.remove("hidden");
-  launchSuccessConfetti();
+  document.getElementById("order-flow-screen").classList.remove("hidden");
+
+  // Первый кадр рисуем сразу из того, что уже знает витрина, чтобы экран не
+  // мигал пустотой, пока летит первый запрос статуса.
+  if (optimistic) {
+    flowStatus = Object.assign({ status: "awaiting_payment", items: [] }, optimistic);
+    renderOrderFlow();
+  }
+  pollOrderFlow();
+  startFlowPolling();
 }
 
-function hideOrderSuccess() {
-  document.getElementById("order-success-screen").classList.add("hidden");
+function closeOrderFlow() {
+  stopFlowPolling();
+  flowOrder = null;
+  document.getElementById("order-flow-screen").classList.add("hidden");
+  refreshActiveOrder();
 }
 
-function successGoTarix() {
-  hideOrderSuccess();
+function startFlowPolling() {
+  stopFlowPolling();
+  flowTimer = setInterval(pollOrderFlow, FLOW_POLL_MS);
+}
+
+function stopFlowPolling() {
+  if (flowTimer) { clearInterval(flowTimer); flowTimer = null; }
+  if (flowTipTimer) { clearInterval(flowTipTimer); flowTipTimer = null; }
+}
+
+async function pollOrderFlow() {
+  if (!flowOrder) return;
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) return;
+
+  try {
+    const res = await fetch(base + "/public/order_status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, order_id: flowOrder.order_id, cart_id: flowOrder.cart_id }),
+    });
+    const data = await res.json();
+    if (!data.ok) return;  // заказ ещё не виден/не найден — попробуем на следующем круге
+
+    // Перерисовываем экран ТОЛЬКО когда что-то реально изменилось: иначе
+    // каждые 5 секунд пересобирался бы блок действий — моргала бы анимация,
+    // а у человека могло бы "выпрыгнуть" из-под пальца поле или кнопка.
+    const sig = [data.status, data.needs_rent_link, data.price_uzs, data.item_name, data.admin_comment].join("|");
+    const statusChanged = flowSignature !== null && flowSignature !== sig;
+    const first = flowSignature === null;
+    flowSignature = sig;
+    flowStatus = data;
+    if (!flowOrder.cart_id && data.cart_id) flowOrder.cart_id = data.cart_id;
+    if (statusChanged || first) renderOrderFlow(!first);
+
+    // Заказ дошёл до конца — больше опрашивать нечего
+    if (data.status === "completed" || data.status === "rejected") stopFlowPolling();
+  } catch (e) { /* сеть моргнула — следующий круг опроса попробует снова */ }
+}
+
+/** Кружок этапа: пройденный, текущий (пульсирует) или будущий. */
+function flowStepsHTML(step) {
+  const labels = [t("flow_step_created"), t("flow_step_payment"), t("flow_step_doing"), t("flow_step_done")];
+  return labels.map(function(label, i) {
+    const n = i + 1;
+    const done = step > n;
+    const current = step === n;
+    const dot = done
+      ? '<span class="w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">✓</span>'
+      : current
+        ? '<span class="w-5 h-5 rounded-full bg-neon-blue text-white text-[10px] font-bold flex items-center justify-center animate-pulse">' + n + '</span>'
+        : '<span class="w-5 h-5 rounded-full bg-white/[0.08] text-gray-500 text-[10px] font-bold flex items-center justify-center">' + n + '</span>';
+    const line = i < labels.length - 1
+      ? '<span class="flex-1 h-[2px] ' + (step > n ? "bg-emerald-500" : "bg-white/10") + ' mx-1"></span>'
+      : "";
+    return '<div class="flex items-center ' + (i < labels.length - 1 ? "flex-1" : "") + '">' +
+      '<div class="flex flex-col items-center gap-1">' + dot +
+        '<span class="text-[8px] ' + (current ? "text-neon-blue font-semibold" : "text-gray-500") + ' whitespace-nowrap">' + label + '</span>' +
+      '</div>' + line +
+    '</div>';
+  }).join("");
+}
+
+const FLOW_VISUAL = {
+  check: '<div id="success-confetti" class="absolute inset-0"></div>' +
+    '<div class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center relative" style="animation: successPop .5s cubic-bezier(.2,1.4,.4,1) both; box-shadow: 0 0 36px -4px rgba(16,185,129,0.6);">' +
+      '<svg width="36" height="36" viewBox="0 0 24 24" fill="none">' +
+        '<path d="M4 12.5L9.5 18L20 6" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" ' +
+              'stroke-dasharray="26" stroke-dashoffset="26" style="animation: drawCheck .4s ease-out .25s forwards;"/>' +
+      '</svg>' +
+    '</div>',
+  waiting: '<div class="w-20 h-20 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center relative">' +
+      '<span class="absolute inset-0 rounded-full border-2 border-neon-blue/50 pulse-ring"></span>' +
+      '<span class="text-3xl">💳</span>' +
+    '</div>',
+  // Крутящееся кольцо + эмодзи внутри: видно, что процесс идёт
+  spinner: function(emoji) {
+    return '<div class="w-20 h-20 rounded-full flex items-center justify-center relative">' +
+        '<span class="absolute inset-0 rounded-full border-[3px] border-white/10 border-t-neon-blue" style="animation: spin 1s linear infinite;"></span>' +
+        '<span class="absolute inset-0 rounded-full border-2 border-neon-blue/40 pulse-ring"></span>' +
+        '<span class="text-3xl">' + emoji + '</span>' +
+      '</div>';
+  },
+  failed: '<div class="w-20 h-20 rounded-full bg-red-500/15 border border-red-500/40 flex items-center justify-center">' +
+      '<span class="text-3xl">✕</span>' +
+    '</div>',
+};
+
+function renderOrderFlow(statusChanged) {
+  const s = flowStatus;
+  if (!s) return;
+  const visual = document.getElementById("flow-visual");
+  const titleEl = document.getElementById("flow-title");
+  const subEl = document.getElementById("flow-subtitle");
+  const actionEl = document.getElementById("flow-action");
+  const buttonsEl = document.getElementById("flow-buttons");
+
+  document.getElementById("success-item").textContent = s.item_name || "—";
+  document.getElementById("success-recipient").textContent =
+    s.recipient && s.recipient.charAt(0) === "@" ? s.recipient : t("cart_to_self");
+  document.getElementById("success-price").textContent = fmtUZS(s.price_uzs || 0);
+  document.getElementById("flow-steps").innerHTML = flowStepsHTML(FLOW_STEP_BY_STATUS[s.status] || 1);
+
+  if (flowTipTimer) { clearInterval(flowTipTimer); flowTipTimer = null; }
+
+  if (s.status === "completed") {
+    visual.innerHTML = FLOW_VISUAL.check;
+    titleEl.textContent = t("flow_done_title");
+    titleEl.className = "text-[19px] font-bold mb-1 text-emerald-400";
+    subEl.textContent = t("flow_done_sub");
+    actionEl.innerHTML = "";
+    buttonsEl.innerHTML =
+      '<button onclick="flowBuyMore()" class="w-full py-3.5 rounded-2xl btn-primary press font-semibold text-white text-sm mb-2.5">' + t("order_success_more") + '</button>' +
+      '<button onclick="flowGoTarix()" class="w-full py-3.5 rounded-2xl pill press font-semibold text-sm mb-2.5">' + t("order_success_history") + '</button>' +
+      '<button onclick="closeOrderFlow()" class="w-full py-3 text-gray-400 text-xs">' + t("order_success_home") + '</button>';
+    launchSuccessConfetti();
+    if (statusChanged && tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    return;
+  }
+
+  if (s.status === "rejected") {
+    visual.innerHTML = FLOW_VISUAL.failed;
+    titleEl.textContent = t("flow_rejected_title");
+    titleEl.className = "text-[19px] font-bold mb-1 text-red-400";
+    subEl.textContent = s.admin_comment || t("flow_rejected_sub");
+    actionEl.innerHTML = "";
+    buttonsEl.innerHTML =
+      '<button onclick="flowBuyMore()" class="w-full py-3.5 rounded-2xl btn-primary press font-semibold text-white text-sm mb-2.5">' + t("order_success_more") + '</button>' +
+      '<button onclick="flowWriteOperator()" class="w-full py-3.5 rounded-2xl pill press font-semibold text-sm">' + t("flow_write_operator") + '</button>';
+    return;
+  }
+
+  titleEl.className = "text-[19px] font-bold mb-1";
+
+  if (s.status === "awaiting_payment") {
+    visual.innerHTML = FLOW_VISUAL.waiting;
+    titleEl.textContent = t("flow_awaiting_title");
+    subEl.textContent = t("flow_awaiting_sub");
+    // Точная сумма к переводу + предупреждение про комиссию банка: если банк
+    // удержит её из перевода, на карту придёт меньше и автоподтверждение не
+    // сработает — человек должен узнать об этом ДО оплаты, а не после.
+    const exact = s.pay_amount && s.pay_amount !== s.price_uzs
+      ? '<div class="rounded-2xl p-3 mb-3 text-left" style="background: rgba(217,180,91,0.10); border: 1px solid rgba(217,180,91,0.35);">' +
+          '<div class="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">' + t("flow_pay_exact") + '</div>' +
+          '<div class="text-[19px] font-black text-neon-yellow leading-none mb-2">' + fmtUZS(s.pay_amount) + '</div>' +
+          '<div class="text-[11px] text-gray-300 leading-snug">⚠️ ' + t("flow_commission_note") + '</div>' +
+        '</div>'
+      : "";
+    actionEl.innerHTML =
+      '<div class="glass-card rounded-2xl p-3.5 mb-3 text-left">' +
+        '<div class="text-[9px] text-gray-500 mb-0.5">' + t("modal_card_label") + '</div>' +
+        '<div class="text-[15px] font-mono font-bold text-white tracking-wider mb-1.5">' + (s.card_number || "—") + '</div>' +
+        '<div class="flex justify-between items-end">' +
+          '<div><div class="text-[9px] text-gray-500">' + t("modal_card_holder_label") + '</div>' +
+          '<div class="text-[11px]">' + (s.card_holder || "—") + '</div></div>' +
+          '<button onclick="copyActiveCard(\'' + (s.card_number || "") + '\')" class="press bg-neon-blue/15 text-neon-blue px-3 py-1.5 rounded-lg text-[10px] font-semibold">' + t("modal_copy") + '</button>' +
+        '</div>' +
+      '</div>' +
+      exact +
+      '<input type="file" id="flow-receipt-input" accept="image/*" class="hidden" onchange="flowSubmitReceipt()" />' +
+      '<button onclick="document.getElementById(\'flow-receipt-input\').click()" id="flow-receipt-btn" class="press w-full py-3.5 rounded-2xl btn-primary font-semibold text-white text-sm">📎 ' + t("ao_pay_upload") + '</button>' +
+      '<p id="flow-receipt-error" class="hidden text-red-400 text-[11px] mt-2"></p>';
+    buttonsEl.innerHTML =
+      '<button onclick="flowCancelOrder()" class="w-full py-3 rounded-2xl pill press text-[12px] text-gray-400 mb-2">' + t("ao_cancel") + '</button>' +
+      '<button onclick="closeOrderFlow()" class="w-full py-3 text-gray-400 text-xs">' + t("flow_minimize") + '</button>';
+    return;
+  }
+
+  if (s.status === "payment_review") {
+    visual.innerHTML = FLOW_VISUAL.spinner("🔍");
+    titleEl.textContent = t("flow_review_title");
+    subEl.textContent = t("flow_review_sub");
+    actionEl.innerHTML = "";
+    buttonsEl.innerHTML = '<button onclick="closeOrderFlow()" class="w-full py-3 text-gray-400 text-xs">' + t("flow_minimize") + '</button>';
+    return;
+  }
+
+  // paid / fulfilling — «выполняется»: анимация + сменяющиеся пояснения,
+  // чтобы ожидание не выглядело как зависший экран
+  visual.innerHTML = FLOW_VISUAL.spinner("⚙️");
+  titleEl.textContent = t("flow_doing_title");
+  subEl.textContent = t("flow_doing_sub");
+
+  const linkBlock = s.needs_rent_link
+    ? '<div class="glass-card rounded-2xl p-3.5 text-left mb-3">' +
+        '<div class="text-[12px] font-semibold text-white mb-1">🔗 ' + t("ao_link_title") + '</div>' +
+        '<div class="text-[11px] text-gray-400 mb-2.5 leading-snug">' + t("ao_link_hint") + '</div>' +
+        '<input id="rent-link-input" type="text" placeholder="tc://..." class="w-full bg-white/[0.04] border border-white/[0.09] rounded-xl px-3 py-2.5 text-[11px] text-white focus:outline-none focus:border-neon-blue/60 mb-2" />' +
+        '<p id="rent-link-error" class="hidden text-red-400 text-[11px] mb-2"></p>' +
+        '<button onclick="submitRentLink()" id="rent-link-btn" class="press w-full py-3 rounded-xl btn-primary font-semibold text-white text-[13px]">' + t("ao_link_send") + '</button>' +
+      '</div>'
+    : "";
+
+  actionEl.innerHTML =
+    linkBlock +
+    '<div class="glass-card rounded-2xl p-3 flex items-center gap-2.5 text-left">' +
+      '<span class="w-4 h-4 border-2 border-white/20 border-t-neon-blue rounded-full flex-shrink-0" style="animation: spin .8s linear infinite;"></span>' +
+      '<span id="flow-tip" class="text-[11.5px] text-gray-300 transition-opacity duration-300"></span>' +
+    '</div>';
+  buttonsEl.innerHTML = '<button onclick="closeOrderFlow()" class="w-full py-3 text-gray-400 text-xs">' + t("flow_minimize") + '</button>';
+
+  const tips = t("flow_tips") || [];
+  const tipEl = document.getElementById("flow-tip");
+  let tipIndex = 0;
+  function paintTip() {
+    if (!tipEl || !tips.length) return;
+    tipEl.style.opacity = 0;
+    setTimeout(function() {
+      tipEl.textContent = tips[tipIndex % tips.length];
+      tipEl.style.opacity = 1;
+      tipIndex++;
+    }, 250);
+  }
+  paintTip();
+  flowTipTimer = setInterval(paintTip, 3000);
+}
+
+async function flowSubmitReceipt() {
+  const input = document.getElementById("flow-receipt-input");
+  const btn = document.getElementById("flow-receipt-btn");
+  const errorEl = document.getElementById("flow-receipt-error");
+  if (!input || !input.files || !input.files[0] || !flowStatus) return;
+
+  const file = input.files[0];
+  errorEl.classList.add("hidden");
+  if (file.size > 8 * 1024 * 1024) {
+    errorEl.textContent = t("ao_err_too_big"); errorEl.classList.remove("hidden"); return;
+  }
+
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) return;
+
+  const prev = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
+
+  try {
+    const base64 = await new Promise(function(resolve, reject) {
+      const r = new FileReader();
+      r.onload = function() { resolve(String(r.result).split(",")[1]); };
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+    const res = await fetch(base + "/public/submit_receipt", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData, order_id: flowStatus.order_id, image_base64: base64 }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      pollOrderFlow();          // сразу перерисуем экран в «проверяем оплату»
+      startFlowPolling();
+    } else {
+      const reasons = {
+        wrong_status: t("ao_err_wrong_status"), too_big: t("ao_err_too_big"),
+        no_image: t("ao_err_no_image"), bad_image: t("ao_err_no_image"), not_found: t("ao_err_not_found"),
+      };
+      errorEl.textContent = reasons[data.error] || (t("ao_err_receipt") + " (" + (data.error || res.status) + ")");
+      errorEl.classList.remove("hidden");
+    }
+  } catch (e) {
+    errorEl.textContent = t("ao_err_network"); errorEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prev;
+    input.value = "";
+  }
+}
+
+function flowCancelOrder() {
+  if (!flowStatus) return;
+  askConfirm(t("ao_cancel_confirm"), async function() {
+    const base = await getShopApiUrl();
+    const initData = await waitForInitData();
+    if (!base || !initData) return;
+    try {
+      await fetch(base + "/public/cancel_order", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData: initData, order_id: flowStatus.order_id }),
+      });
+    } catch (e) { /* молча — статус всё равно перечитаем ниже */ }
+    pollOrderFlow();
+  });
+}
+
+function flowWriteOperator() {
+  closeOrderFlow();
+  switchTab("profil");
+}
+
+function flowGoTarix() {
+  closeOrderFlow();
   switchTab("tarix");
 }
 
-function successBuyMore() {
-  hideOrderSuccess();
-  switchTab("asosiy");
-}
-
-function successGoHome() {
-  hideOrderSuccess();
+function flowBuyMore() {
+  closeOrderFlow();
   switchTab("asosiy");
 }
 
@@ -1364,6 +2104,9 @@ initProfile();
 initSupportInfo();
 initLiveFeed();
 sendDiag();
+// Аренды тянем на старте, а не только при заходе на вкладку: если срок
+// заканчивается сегодня, человек должен увидеть это сразу.
+renderMyRentals();
 
 /* ---------------- Живая лента заказов ---------------- */
 function timeAgoLabel(ts) {
@@ -1416,6 +2159,80 @@ function toggleRentHowto() {
   }
   box.classList.toggle("hidden");
   arrow.style.transform = opening ? "rotate(180deg)" : "";
+}
+
+/* ================= Мои аренды + продление ================= */
+let myRentals = [];
+
+function rentLeftLabel(seconds) {
+  if (seconds >= 86400) {
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    return d + " " + t("rent_days_short") + (h ? " " + h + " " + t("rent_hours_short") : "");
+  }
+  const h = Math.max(1, Math.floor(seconds / 3600));
+  return h + " " + t("rent_hours_short");
+}
+
+async function renderMyRentals() {
+  const box = document.getElementById("my-rentals-box");
+  const listEl = document.getElementById("my-rentals-list");
+  if (!box) return;
+
+  const base = await getShopApiUrl();
+  const initData = await waitForInitData();
+  if (!base || !initData) { box.classList.add("hidden"); return; }
+
+  try {
+    const res = await fetch(base + "/public/my_rentals", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData: initData }),
+    });
+    const data = await res.json();
+    myRentals = data.rentals || [];
+  } catch (e) { box.classList.add("hidden"); return; }
+
+  if (!myRentals.length) { box.classList.add("hidden"); listEl.innerHTML = ""; return; }
+
+  box.classList.remove("hidden");
+  listEl.innerHTML = myRentals.map(function(r, i) {
+    // Меньше суток — подсвечиваем красным: это последний момент продлить,
+    // потом подарок просто исчезнет из профиля.
+    const soon = r.seconds_left < 86400;
+    const leftClass = soon ? "text-red-400" : "text-neon-blue";
+    const extendBtn = r.can_extend
+      ? '<button data-i="' + i + '" class="rent-extend-btn press pill-gold rounded-xl px-3 py-2 text-[11px] font-bold flex-shrink-0">' + t("rent_extend") + '</button>'
+      : "";
+    return '<div class="glass-card rounded-[20px] p-3.5 flex items-center gap-3"' +
+      (soon ? ' style="border-color: rgba(248,113,113,0.45);"' : '') + '>' +
+      '<div class="min-w-0 flex-1">' +
+        '<div class="text-[13px] font-semibold text-white truncate">🖼 ' + r.item_name + '</div>' +
+        '<div class="text-[11px] ' + leftClass + ' mt-0.5">' +
+          (soon ? "⚠️ " + t("rent_ending_soon") + " · " : "") +
+          t("rent_ends_in") + ": " + rentLeftLabel(r.seconds_left) +
+        '</div>' +
+        (r.price_per_day_uzs
+          ? '<div class="text-[10px] text-gray-500 mt-0.5">' + fmtUZS(r.price_per_day_uzs) + ' · 1 ' + t("rent_days_suffix") + '</div>'
+          : '') +
+      '</div>' +
+      extendBtn +
+    '</div>';
+  }).join("");
+
+  Array.prototype.forEach.call(listEl.querySelectorAll(".rent-extend-btn"), function(btn) {
+    btn.addEventListener("click", function() { openExtendModal(myRentals[Number(btn.dataset.i)]); });
+  });
+}
+
+function openExtendModal(rental) {
+  if (!rental) return;
+  openModal({
+    kind: "nft_rent_extend",
+    title: t("rent_extend_title") + ": " + rental.item_name,
+    price: rental.price_per_day_uzs,
+    emoji: "⏳",
+    raw: rental,
+  });
 }
 
 /* ================= Активный заказ + ввод ссылки аренды ================= */
@@ -1480,23 +2297,47 @@ async function refreshActiveOrder() {
     ? '<button onclick="cancelActiveOrder(' + active.id + ')" class="press mt-3 w-full py-2.5 rounded-xl pill text-[11px] font-medium text-gray-400">' + t("ao_cancel") + '</button>'
     : "";
 
+  // Заказ из корзины — показываем все товары списком, иначе человек видел бы
+  // только один товар из нескольких и не понял бы, за что общая сумма.
+  const cartItems = active.cart_items || [];
+  const isCart = cartItems.length > 0;
+  const titleLine = isCart
+    ? '🛒 ' + t("cart_active_title") + ' · ' + cartItems.length + ' ' + t("cart_items_suffix")
+    : active.item_name;
+  const cartItemsBlock = isCart
+    ? '<div class="mt-2 pt-2 border-t border-white/[0.08] space-y-1">' +
+        cartItems.map(function(it) {
+          return '<div class="flex justify-between gap-2 text-[11px]">' +
+            '<span class="text-gray-300 truncate">' + it.item_name + '</span>' +
+            '<span class="text-gray-400 flex-shrink-0">' + fmtUZS(it.price_uzs) + '</span>' +
+          '</div>';
+        }).join("") +
+      '</div>'
+    : "";
+
   bar.classList.remove("hidden");
   bar.innerHTML =
     '<div class="glass-card rounded-[20px] p-4 overlay-enter" style="border-color: rgba(42,171,238,0.35);">' +
-      '<div class="flex items-center justify-between gap-2">' +
+      // Тап по шапке открывает полноэкранный живой статус заказа — там всё:
+      // реквизиты, загрузка чека, "выполняется" и финальная галочка.
+      '<div class="flex items-center justify-between gap-2 cursor-pointer" onclick="openOrderFlow({order_id: ' + active.id +
+        ', cart_id: ' + (active.cart_id ? "'" + active.cart_id + "'" : "null") + '})">' +
         '<div class="min-w-0">' +
-          '<div class="text-[10px] text-neon-blue font-bold uppercase tracking-wider mb-0.5">' + t("ao_title") + ' #' + active.id + '</div>' +
-          '<div class="text-[13px] font-semibold text-white truncate">' + active.item_name + '</div>' +
-          '<div class="text-[11px] text-gray-400 mt-0.5">' + statusText + '</div>' +
+          '<div class="text-[10px] text-neon-blue font-bold uppercase tracking-wider mb-0.5">' + t("ao_title") + (isCart ? "" : " #" + active.id) + '</div>' +
+          '<div class="text-[13px] font-semibold text-white truncate">' + titleLine + '</div>' +
+          '<div class="text-[11px] text-gray-400 mt-0.5">' + statusText + ' ›</div>' +
         '</div>' +
         '<div class="text-[12px] font-bold text-neon-yellow flex-shrink-0">' + fmtUZS(active.price_uzs) + '</div>' +
       '</div>' +
-      payBlock + linkBlock + cancelBtn +
+      cartItemsBlock + payBlock + linkBlock + cancelBtn +
     '</div>';
 }
 
 async function cancelActiveOrder(orderId) {
-  if (!confirm(t("ao_cancel_confirm"))) return;
+  askConfirm(t("ao_cancel_confirm"), function() { doCancelActiveOrder(orderId); });
+}
+
+async function doCancelActiveOrder(orderId) {
   const base = await getShopApiUrl();
   const initData = await waitForInitData();
   if (!base || !initData) return;
@@ -1550,7 +2391,17 @@ async function submitReceipt(orderId) {
       if (tg && tg.showAlert) tg.showAlert(t("ao_receipt_sent")); else alert(t("ao_receipt_sent"));
       refreshActiveOrder();
     } else {
-      errorEl.textContent = t("ao_err_receipt"); errorEl.classList.remove("hidden");
+      // Показываем конкретную причину, а не общее "не удалось" —
+      // иначе непонятно, что именно исправлять.
+      const reasons = {
+        wrong_status: t("ao_err_wrong_status"),
+        too_big: t("ao_err_too_big"),
+        no_image: t("ao_err_no_image"),
+        bad_image: t("ao_err_no_image"),
+        not_found: t("ao_err_not_found"),
+      };
+      errorEl.textContent = reasons[data.error] || (t("ao_err_receipt") + " (" + (data.error || res.status) + ")");
+      errorEl.classList.remove("hidden");
     }
   } catch (e) {
     errorEl.textContent = t("ao_err_network"); errorEl.classList.remove("hidden");
@@ -1591,13 +2442,12 @@ async function submitRentLink() {
     });
     const data = await res.json();
     if (data.ok) {
-      // Реальный успех от backend, а не таймер — показываем экран успеха.
-      document.getElementById("success-item").textContent = data.item_name || "";
-      document.getElementById("success-recipient").textContent = "";
-      document.getElementById("success-price").textContent = "";
-      document.getElementById("order-success-screen").classList.remove("hidden");
-      document.querySelector("#order-success-screen h2").textContent = t("ao_connected");
-      launchSuccessConfetti();
+      // Реальный успех от backend, а не таймер. Подарок подключён — показываем
+      // это на экране статуса и ждём, пока админ отметит заказ выполненным.
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      showToast(t("ao_connected"));
+      if (flowOrder) { pollOrderFlow(); startFlowPolling(); }
+      else openOrderFlow({ order_id: data.order_id });
       refreshActiveOrder();
     } else if (data.error === "bad_link") {
       errorEl.textContent = t("ao_err_bad_link"); errorEl.classList.remove("hidden");

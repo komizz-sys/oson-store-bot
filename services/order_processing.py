@@ -26,6 +26,129 @@ class OrderError(Exception):
     """Ошибка валидации заказа — пользователю уже отправлено сообщение с текстом."""
 
 
+def _shift_date(sql_dt: str, days: int) -> str:
+    """'2026-09-19 10:00:00' + 3 дня -> '2026-09-22' (для наглядности в чате)."""
+    from datetime import datetime, timedelta
+
+    try:
+        base = datetime.strptime(str(sql_dt).replace("T", " ").split(".")[0], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return "—"
+    return (base + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+async def create_order_from_draft(bot: Bot, user_id: int, username: str | None, data: dict) -> dict:
+    """
+    Создаёт заказ из черновика (то, что лежит в FSM после process_order) и
+    выдаёт сумму к оплате. Используется ДВУМЯ путями оформления:
+    - из чата, после кнопки «Подтвердить» (handlers/order.py);
+    - сразу из мини-аппа (place_order_direct ниже) — там подтверждение уже
+      сделано в самой витрине, второй раз спрашивать в чате незачем.
+    -> {"order_id": int, "price": int, "pay_amount": int}
+    """
+    import config
+    from database.db import create_order, allocate_unique_amount, set_expected_amount
+
+    order_id = await create_order(
+        user_id=user_id,
+        username=username or "",
+        category=data["category"],
+        item_name=data["item_name"],
+        quantity=data.get("quantity", 1),
+        price_uzs=data["price"],
+        recipient=data["recipient"],
+        recipient_user_id=data.get("recipient_user_id"),
+        rent_days=data.get("rent_days"),
+        nft_address=data.get("nft_address"),
+        base_price_per_day_gram=str(data.get("base_price_per_day_gram", "")) or None,
+        is_extension=int(data.get("is_extension") or 0),
+        parent_order_id=data.get("parent_order_id"),
+    )
+
+    # Уникальная сумма (цена + небольшая случайная надбавка) — чтобы по одной
+    # только сумме поступления понять, чей это платёж (автопроверка по SMS).
+    pay_amount = data["price"]
+    if config.UNIQUE_AMOUNT_ENABLED:
+        pay_amount = await allocate_unique_amount(data["price"], config.UNIQUE_AMOUNT_MAX_OFFSET)
+        await set_expected_amount(order_id, pay_amount)
+
+    return {"order_id": order_id, "price": data["price"], "pay_amount": pay_amount}
+
+
+async def place_order_direct(
+    bot: Bot,
+    state: FSMContext,
+    user_id: int,
+    username: str | None,
+    full_name: str,
+    payload: dict,
+) -> dict:
+    """
+    Оформление заказа ПРЯМО ИЗ ВИТРИНЫ, без шага «Всё верно?» в чате.
+
+    Зачем: человек уже всё выбрал и подтвердил в мини-аппе — просить его
+    выйти в чат и нажать там ещё одну кнопку значит оборвать покупку на
+    середине. Теперь заказ создаётся сразу, а витрина сама ведёт клиента
+    дальше по статусам (оплата -> проверка -> выполнение -> готово).
+
+    В чат при этом всё равно уходит сообщение с номером заказа и реквизитами —
+    чтобы у клиента осталась история и возможность прислать чек прямо в чат,
+    как раньше.
+    """
+    import config
+
+    # Тот же самый разбор и проверка данных, что и в обычном пути, просто
+    # без сообщения «Всё верно?» — черновик остаётся в state.
+    await process_order(bot, state, user_id, username, full_name, payload, announce=False)
+    data = await state.get_data()
+
+    created = await create_order_from_draft(bot, user_id, username, data)
+
+    # Состояние как после подтверждения в чате: если клиент по привычке
+    # пришлёт чек сообщением в бота, он обработается ровно как раньше.
+    await state.update_data(order_id=created["order_id"])
+    await state.set_state(OrderStates.waiting_payment_proof)
+
+    lang = await get_user_language(user_id)
+    amount_note = ""
+    if config.UNIQUE_AMOUNT_ENABLED and created["pay_amount"] != created["price"]:
+        # Уникальная сумма + предупреждение про комиссию банка: если она
+        # съест часть перевода, на карту придёт меньше и автоподтверждение
+        # не сработает. Человек должен узнать об этом ДО оплаты.
+        amount_note = (
+            f"\n\n⚠️ {t(lang, 'cart_exact_amount')} <b>{format_uzs(created['pay_amount'])}</b>"
+            + t(lang, "pay_commission_note")
+        )
+
+    from keyboards.user_kb import payment_methods_kb
+
+    try:
+        await bot.send_message(
+            user_id,
+            t(lang, "order_created").format(
+                order_id=created["order_id"], price=format_uzs(created["price"])
+            )
+            + t(lang, "order_pay_card")
+            + f"<code>{config.PAYMENT_CARD_NUMBER}</code>\n"
+            + f"{t(lang, 'order_pay_receiver')}: {config.PAYMENT_CARD_HOLDER}"
+            + amount_note
+            + "\n"
+            + t(lang, "order_pay_hint_webapp"),
+            reply_markup=payment_methods_kb(),
+        )
+    except Exception:
+        pass  # чат не критичен: дальше клиент всё равно ведётся витриной
+
+    return {
+        "order_id": created["order_id"],
+        "price_uzs": created["price"],
+        "pay_amount": created["pay_amount"],
+        "item_name": data["item_name"],
+        "recipient": data["recipient"],
+        "category": data["category"],
+    }
+
+
 async def process_order(
     bot: Bot,
     state: FSMContext,
@@ -33,9 +156,15 @@ async def process_order(
     username: str | None,
     full_name: str,
     payload: dict,
+    announce: bool = True,
 ) -> None:
-    """Валидирует payload из мини-аппа, сохраняет черновик заказа в FSM и
-    отправляет пользователю сообщение с подтверждением ("Всё верно?")."""
+    """Валидирует payload из мини-аппа и сохраняет черновик заказа в FSM.
+
+    announce=True (по умолчанию) — дополнительно отправляет в чат сообщение
+    «Проверьте заказ… Всё верно?» с кнопками (старый путь через чат).
+    announce=False — только черновик, без сообщений: так им пользуется
+    place_order_direct(), где подтверждение уже сделано в самой витрине.
+    """
     await upsert_user(user_id, username or "", full_name)
 
     category = payload.get("category")
@@ -59,10 +188,17 @@ async def process_order(
     note = (payload.get("note") or "").strip()
 
     if not recipient:
-        lang = await get_user_language(user_id)
-        text = t(lang, "no_username_error")
-        await bot.send_message(user_id, text)
-        raise OrderError(text)
+        # Для ПРОДЛЕНИЯ получатель не нужен: подарок уже подключён к профилю
+        # клиента, никому ничего доставлять не надо — поэтому отсутствие
+        # публичного @username не должно блокировать продление.
+        if category == "nft_rent_extend":
+            recipient = f"id{user_id}"
+            recipient_user_id = user_id
+        else:
+            lang = await get_user_language(user_id)
+            text = t(lang, "no_username_error")
+            await bot.send_message(user_id, text)
+            raise OrderError(text)
 
     if category in ("stars", "stars_custom", "premium", "simple_gift"):
         data = {
@@ -86,6 +222,9 @@ async def process_order(
         await state.update_data(**data, note=note)
         await state.set_state(OrderStates.confirming)
 
+        if not announce:
+            return
+
         lang = await get_user_language(user_id)
         note_line = f"\n{t(lang, 'order_check_note')}: {note}" if note else ""
         await bot.send_message(
@@ -94,6 +233,62 @@ async def process_order(
             f"{t(lang, 'order_check_item')}: <b>{data['item_name']}</b>\n"
             f"{t(lang, 'order_check_recipient')}: {recipient}{note_line}\n"
             f"{t(lang, 'order_check_total')}: <b>{format_uzs(data['price'])}</b>\n\n"
+            f"{t(lang, 'order_check_confirm')}",
+            reply_markup=confirm_order_kb(),
+        )
+
+    elif category == "nft_rent_extend":
+        # ПРОДЛЕНИЕ уже действующей аренды. Цену за день берём НЕ из данных
+        # клиента, а из его же оплаченного заказа в нашей базе — так продлить
+        # можно только реально свою аренду и только по реальной цене.
+        from services.marketapp_service import calc_rent_price
+        from services.rent_extension import find_rental
+
+        rental = await find_rental(user_id, (payload.get("nft_address") or "").strip())
+        if not rental or not rental["can_extend"]:
+            lang = await get_user_language(user_id)
+            text = t(lang, "rent_extend_not_found")
+            await bot.send_message(user_id, text)
+            raise OrderError("rental_not_found")
+
+        try:
+            days = int(payload["days"])
+        except (KeyError, ValueError, TypeError):
+            raise OrderError("bad_days")
+        days = max(rental["min_days"], min(days, rental["max_days"]))
+
+        calc = calc_rent_price(rental["base_price_per_day_gram"], days)
+        item_name = f"Продление: {rental['item_name']}"
+
+        await state.update_data(
+            category="nft_rent",
+            is_extension=1,
+            parent_order_id=rental["order_id"],
+            item_name=item_name,
+            nft_address=rental["nft_address"],
+            base_price_per_day_gram=rental["base_price_per_day_gram"],
+            rent_days=days,
+            price=calc["total_to_pay"],
+            quantity=1,
+            recipient=recipient,
+            recipient_user_id=recipient_user_id,
+            note=note,
+        )
+        await state.set_state(OrderStates.confirming)
+
+        if not announce:
+            return
+
+        lang = await get_user_language(user_id)
+        await bot.send_message(
+            user_id,
+            f"{t(lang, 'order_check_title')}\n\n"
+            f"{t(lang, 'order_check_item')}: <b>{item_name} — +{days} kun</b>\n"
+            f"{t(lang, 'rent_extend_until')}: {rental['ends_at'][:10]} → "
+            f"{_shift_date(rental['ends_at'], days)}\n"
+            f"{t(lang, 'order_check_fee')}: {format_uzs(calc['fee_total_uzs'])} "
+            f"({format_uzs(calc['fee_refundable_uzs'])} — {t(lang, 'order_check_fee_refund')})\n"
+            f"{t(lang, 'order_check_total')}: <b>{format_uzs(calc['total_to_pay'])}</b>\n\n"
             f"{t(lang, 'order_check_confirm')}",
             reply_markup=confirm_order_kb(),
         )
@@ -124,6 +319,9 @@ async def process_order(
             note=note,
         )
         await state.set_state(OrderStates.confirming)
+
+        if not announce:
+            return
 
         lang = await get_user_language(user_id)
         note_line = f"\n{t(lang, 'order_check_note')}: {note}" if note else ""

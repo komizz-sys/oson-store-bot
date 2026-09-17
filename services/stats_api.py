@@ -22,7 +22,7 @@ import re
 from database.db import (
     get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard,
     get_pending_rent_link_order, set_rent_link, get_order, set_order_status,
-    attach_payment_proof,
+    attach_payment_proof, get_cart_orders, set_cart_status, attach_cart_payment_proof,
 )
 from services import marketapp_api
 
@@ -128,10 +128,28 @@ async def handle_active_order(request: web.Request) -> web.Response:
     if not active:
         return web.json_response({"active": None})
 
-    # Ждём ли от клиента tc://-ссылку для подключения аренды
+    # Заказ из корзины — показываем её ЦЕЛИКОМ одной карточкой с общей суммой,
+    # иначе клиент увидел бы только один товар из пяти и не понял, что платить.
+    cart_items = []
+    if active.get("cart_id"):
+        cart_orders = await get_cart_orders(active["cart_id"])
+        if cart_orders:
+            cart_items = [
+                {"item_name": o["item_name"], "price_uzs": o["price_uzs"], "recipient": o["recipient"]}
+                for o in cart_orders
+            ]
+            active = dict(
+                active,
+                price_uzs=sum(o["price_uzs"] for o in cart_orders),
+                item_name=f"🛒 {len(cart_orders)}",
+            )
+
+    # Ждём ли от клиента tc://-ссылку для подключения аренды.
+    # Для ПРОДЛЕНИЯ ссылка не нужна — подарок уже подключён к профилю.
     needs_link = bool(
         active["category"] == "nft_rent"
         and active["status"] == "paid"
+        and not active.get("is_extension")
         and not (active.get("rent_link") or "")
     )
     # Реквизиты нужны, только пока клиент ещё не оплатил — чтобы он мог
@@ -145,6 +163,8 @@ async def handle_active_order(request: web.Request) -> web.Response:
             "item_name": active["item_name"],
             "price_uzs": active["price_uzs"],
             "status": active["status"],
+            "cart_id": active.get("cart_id"),
+            "cart_items": cart_items,
             "needs_rent_link": needs_link,
             "needs_payment": needs_payment,
             "card_number": config.PAYMENT_CARD_NUMBER if needs_payment else None,
@@ -229,7 +249,11 @@ async def handle_cancel_order(request: web.Request) -> web.Response:
     if order["status"] not in ("awaiting_payment", "payment_review"):
         return web.json_response({"error": "too_late"}, status=400)
 
-    await set_order_status(order["id"], "rejected", "Отменён клиентом")
+    if order.get("cart_id"):
+        # Корзина оплачивается одной суммой — и отменяется только целиком
+        await set_cart_status(order["cart_id"], "rejected", "Отменён клиентом")
+    else:
+        await set_order_status(order["id"], "rejected", "Отменён клиентом")
     return web.json_response({"ok": True})
 
 
@@ -249,36 +273,58 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
     if not user:
         return web.json_response({"error": "invalid or expired initData"}, status=403)
 
-    order = await get_order(int(body.get("order_id") or 0))
+    order_id = int(body.get("order_id") or 0)
+    order = await get_order(order_id)
     # Владелец заказа — иначе по чужому id можно было бы подсунуть чужой чек
     if not order or order["user_id"] != user["id"]:
+        print(f"[RECEIPT] not_found: order_id={order_id} user={user['id']}", flush=True)
         return web.json_response({"error": "not_found"}, status=404)
     if order["status"] not in ("awaiting_payment", "payment_review"):
+        print(f"[RECEIPT] wrong_status: order={order_id} status={order['status']}", flush=True)
         return web.json_response({"error": "wrong_status"}, status=400)
 
     image_b64 = body.get("image_base64") or ""
     if not image_b64:
+        print(f"[RECEIPT] no_image: order={order_id}", flush=True)
         return web.json_response({"error": "no_image"}, status=400)
 
     import base64
     from aiogram.types import BufferedInputFile
-    from keyboards.admin_kb import admin_review_kb
+    from keyboards.admin_kb import admin_review_kb, admin_review_cart_kb
     from services.prices import format_uzs
 
     try:
         raw = base64.b64decode(image_b64)
-    except Exception:
+    except Exception as e:
+        print(f"[RECEIPT] bad_image: order={order_id} err={e}", flush=True)
         return web.json_response({"error": "bad_image"}, status=400)
     if len(raw) > 8 * 1024 * 1024:  # Telegram всё равно не примет больше
+        print(f"[RECEIPT] too_big: order={order_id} size={len(raw)}", flush=True)
         return web.json_response({"error": "too_big"}, status=400)
 
-    caption = (
-        f"🆕 <b>Новый чек по заказу #{order['id']}</b> (из мини-аппа)\n"
-        f"От: @{user.get('username') or user['id']} (id: {user['id']})\n"
-        f"Товар: {order['item_name']}\n"
-        f"Получатель: {order['recipient']}\n"
-        f"Сумма: {format_uzs(order['price_uzs'])}"
-    )
+    sender = f"@{user.get('username') or user['id']} (id: {user['id']})"
+    cart_id = order.get("cart_id")
+
+    if cart_id:
+        # Один чек на всю корзину — одно сообщение админу и одна пара кнопок
+        cart_orders = await get_cart_orders(cart_id)
+        total = sum(o["price_uzs"] for o in cart_orders)
+        items = "\n".join(f"  • {o['item_name']} → {o['recipient']}" for o in cart_orders)
+        caption = (
+            f"🛒 <b>Новый чек по корзине {cart_id}</b> ({len(cart_orders)} тов., из мини-аппа)\n"
+            f"От: {sender}\n{items}\n"
+            f"Итого: {format_uzs(total)}"
+        )
+        markup = admin_review_cart_kb(cart_id)
+    else:
+        caption = (
+            f"🆕 <b>Новый чек по заказу #{order['id']}</b> (из мини-аппа)\n"
+            f"От: {sender}\n"
+            f"Товар: {order['item_name']}\n"
+            f"Получатель: {order['recipient']}\n"
+            f"Сумма: {format_uzs(order['price_uzs'])}"
+        )
+        markup = admin_review_kb(order["id"])
 
     sent_any = False
     for admin_id in config.ADMIN_IDS:
@@ -287,20 +333,26 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
                 admin_id,
                 BufferedInputFile(raw, filename=f"receipt_{order['id']}.jpg"),
                 caption=caption,
-                reply_markup=admin_review_kb(order["id"]),
+                reply_markup=markup,
             )
             if not sent_any and msg.photo:
                 # Сохраняем file_id, чтобы чек был виден в карточке заказа,
                 # как и при отправке через чат
-                await attach_payment_proof(order["id"], msg.photo[-1].file_id)
+                if cart_id:
+                    await attach_cart_payment_proof(cart_id, msg.photo[-1].file_id)
+                else:
+                    await attach_payment_proof(order["id"], msg.photo[-1].file_id)
             sent_any = True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[RECEIPT] send failed: order={order_id} admin={admin_id} err={e}", flush=True)
 
     if not sent_any:
         return web.json_response({"error": "send_failed"}, status=500)
 
-    await set_order_status(order["id"], "payment_review")
+    if cart_id:
+        await set_cart_status(cart_id, "payment_review")
+    else:
+        await set_order_status(order["id"], "payment_review")
     return web.json_response({"ok": True})
 
 
@@ -353,6 +405,216 @@ async def handle_create_order(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_create_cart_order(request: web.Request) -> web.Response:
+    """
+    Оформление КОРЗИНЫ (несколько товаров — одна оплата) из мини-аппа.
+    Как и /public/create_order, требует подписанную initData: без неё можно
+    было бы оформлять заказы от чужого имени.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    items = body.get("items")
+    key = StorageKey(bot_id=_bot.id, chat_id=user["id"], user_id=user["id"])
+    state = FSMContext(storage=_storage, key=key)
+    full_name = (user.get("first_name", "") + " " + user.get("last_name", "")).strip()
+
+    from services.cart import process_cart_order, CartError
+
+    try:
+        result = await process_cart_order(
+            bot=_bot,
+            state=state,
+            user_id=user["id"],
+            username=user.get("username"),
+            full_name=full_name or "Mijoz",
+            items=items,
+        )
+    except CartError as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+    return web.json_response({"ok": True, **result})
+
+
+async def handle_place_order(request: web.Request) -> web.Response:
+    """
+    Оформление заказа СРАЗУ, без шага «Всё верно?» в чате: витрина уже
+    показала человеку товар, получателя и сумму, и он нажал «Оплатил».
+    Возвращает номер заказа и реквизиты — дальше витрина сама показывает
+    живой статус (см. /public/order_status).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "missing payload"}, status=400)
+
+    key = StorageKey(bot_id=_bot.id, chat_id=user["id"], user_id=user["id"])
+    state = FSMContext(storage=_storage, key=key)
+    full_name = (user.get("first_name", "") + " " + user.get("last_name", "")).strip()
+
+    from services.order_processing import place_order_direct
+
+    try:
+        result = await place_order_direct(
+            bot=_bot,
+            state=state,
+            user_id=user["id"],
+            username=user.get("username"),
+            full_name=full_name or "Mijoz",
+            payload=payload,
+        )
+    except OrderError as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+    return web.json_response({
+        "ok": True,
+        **result,
+        "card_number": config.PAYMENT_CARD_NUMBER,
+        "card_holder": config.PAYMENT_CARD_HOLDER,
+    })
+
+
+async def handle_place_cart_order(request: web.Request) -> web.Response:
+    """То же самое, но для корзины: несколько товаров — одна сумма к оплате."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    key = StorageKey(bot_id=_bot.id, chat_id=user["id"], user_id=user["id"])
+    state = FSMContext(storage=_storage, key=key)
+    full_name = (user.get("first_name", "") + " " + user.get("last_name", "")).strip()
+
+    from services.cart import place_cart_order_direct, CartError
+
+    try:
+        result = await place_cart_order_direct(
+            bot=_bot,
+            state=state,
+            user_id=user["id"],
+            username=user.get("username"),
+            full_name=full_name or "Mijoz",
+            items=body.get("items"),
+        )
+    except CartError as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+    return web.json_response({
+        "ok": True,
+        **result,
+        "card_number": config.PAYMENT_CARD_NUMBER,
+        "card_holder": config.PAYMENT_CARD_HOLDER,
+    })
+
+
+async def handle_order_status(request: web.Request) -> web.Response:
+    """
+    Живой статус конкретного заказа (или всей корзины) — витрина опрашивает
+    его раз в несколько секунд, чтобы показывать «проверяем оплату»,
+    «выполняется», «готово» прямо в мини-аппе, не отправляя человека в чат.
+
+    Отдаётся ТОЛЬКО владельцу заказа (проверка по подписанной initData).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    cart_id = (body.get("cart_id") or "").strip()
+    order_id = int(body.get("order_id") or 0)
+
+    orders: list[dict] = []
+    if cart_id:
+        orders = await get_cart_orders(cart_id)
+    elif order_id:
+        one = await get_order(order_id)
+        orders = [one] if one else []
+
+    if not orders or any(o["user_id"] != user["id"] for o in orders):
+        return web.json_response({"error": "not_found"}, status=404)
+
+    main = orders[0]
+    total = sum(o["price_uzs"] for o in orders)
+
+    # Статус корзины = самый «ранний» статус среди её товаров: пока хоть один
+    # не доделан, вся корзина считается невыполненной.
+    STATUS_ORDER = ["rejected", "awaiting_payment", "payment_review", "paid", "fulfilling", "completed"]
+    status = min((o["status"] for o in orders), key=lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else 99)
+
+    needs_payment = status == "awaiting_payment"
+    rent_order = next(
+        (o for o in orders
+         if o["category"] == "nft_rent" and o["status"] == "paid"
+         and not o.get("is_extension") and not (o.get("rent_link") or "")),
+        None,
+    )
+
+    return web.json_response({
+        "ok": True,
+        "order_id": main["id"],
+        "cart_id": cart_id or main.get("cart_id"),
+        "status": status,
+        "category": main["category"],
+        "item_name": main["item_name"],
+        "recipient": main["recipient"],
+        "price_uzs": total,
+        "pay_amount": main.get("expected_amount_uzs") or total,
+        "admin_comment": main.get("admin_comment"),
+        "is_extension": bool(main.get("is_extension")),
+        "needs_payment": needs_payment,
+        "needs_rent_link": bool(rent_order),
+        "card_number": config.PAYMENT_CARD_NUMBER if needs_payment else None,
+        "card_holder": config.PAYMENT_CARD_HOLDER if needs_payment else None,
+        "items": [
+            {"item_name": o["item_name"], "price_uzs": o["price_uzs"],
+             "recipient": o["recipient"], "status": o["status"]}
+            for o in orders
+        ],
+    })
+
+
+async def handle_my_rentals(request: web.Request) -> web.Response:
+    """
+    Действующие аренды клиента для раздела «Мои аренды» в мини-аппе:
+    что арендовано, сколько осталось и по какой цене можно продлить.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    from services.rent_extension import get_active_rentals
+
+    rentals = await get_active_rentals(user["id"])
+    return web.json_response({"rentals": rentals})
+
+
 async def handle_diag(request: web.Request) -> web.Response:
     """
     Временный эндпоинт для отладки бага с Tarix/Profil (пустой initData на
@@ -398,11 +660,18 @@ async def start_stats_server(bot, storage):
     app.router.add_get("/public/leaderboard", handle_leaderboard)
     app.router.add_post("/public/_diag", handle_diag)
     app.router.add_post("/public/create_order", handle_create_order)
+    app.router.add_post("/public/create_cart_order", handle_create_cart_order)
+    app.router.add_post("/public/place_order", handle_place_order)
+    app.router.add_post("/public/place_cart_order", handle_place_cart_order)
+    app.router.add_post("/public/order_status", handle_order_status)
+    app.router.add_post("/public/my_rentals", handle_my_rentals)
     app.router.add_post("/public/active_order", handle_active_order)
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
+                 "/public/create_cart_order", "/public/my_rentals",
+                 "/public/place_order", "/public/place_cart_order", "/public/order_status",
                  "/public/active_order", "/public/submit_rent_link", "/public/cancel_order", "/public/submit_receipt"):
         app.router.add_route("OPTIONS", path, handle_preflight)
 
