@@ -653,7 +653,12 @@ async def start_stats_server(bot, storage):
     global _bot, _storage
     _bot, _storage = bot, storage
 
-    app = web.Application(middlewares=[cors_middleware])
+    # БАГ БЫЛ ЗДЕСЬ: у aiohttp лимит тела запроса по умолчанию 1 МБ, а чек с
+    # телефона в base64 весит 3-6 МБ. Запрос обрывался ДО наших проверок, и
+    # клиент видел непонятное "bad request body" — причём у одного проходило
+    # (мелкий скриншот), а у другого нет. Витрина теперь ещё и сжимает фото
+    # перед отправкой, но запас на сервере всё равно нужен.
+    app = web.Application(middlewares=[cors_middleware], client_max_size=20 * 1024 * 1024)
     app.router.add_get("/internal/stats", handle_stats)
     app.router.add_post("/public/my_orders", handle_my_orders)
     app.router.add_post("/public/my_stats", handle_my_stats)
