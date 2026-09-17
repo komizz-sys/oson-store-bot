@@ -108,6 +108,11 @@ async def _start_listening():
     global _state
     if not client or not await client.is_user_authorized():
         return
+    if _state["listening"]:
+        # Уже слушаем: обработчик вешается ОДИН раз. Иначе после входа через
+        # страницу и повторного вызова из главного цикла каждое уведомление
+        # пересылалось бы дважды.
+        return
 
     me = await client.get_me()
     _state["me"] = {"id": me.id, "username": me.username, "name": me.first_name}
@@ -385,7 +390,33 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
     print(f"[relay] веб-страница настройки поднята на порту {PORT}", flush=True)
 
-    await client.run_until_disconnected()
+    # БАГ БЫЛ ЗДЕСЬ: run_until_disconnected() вызывался сразу, даже когда в
+    # аккаунт ещё не вошли — Telethon спрашивал у Telegram состояние обновлений,
+    # получал AuthKeyUnregistered и весь процесс падал. Вместе с ним падала и
+    # страница входа, то есть войти было невозможно в принципе.
+    #
+    # Теперь ждём входа: пока его нет — просто держим страницу живой, как
+    # только вход появился (человек ввёл код на странице) — начинаем слушать.
+    while True:
+        try:
+            if await client.is_user_authorized():
+                await _start_listening()
+                await client.run_until_disconnected()
+                # Сюда попадаем, если соединение разорвалось — переподключаемся
+                print("[relay] соединение с Telegram разорвано, переподключаюсь", flush=True)
+                _state["listening"] = False
+                await client.connect()
+            else:
+                await asyncio.sleep(5)
+        except Exception as e:
+            _state["error"] = str(e)
+            print(f"[relay] ошибка главного цикла: {e}", flush=True)
+            _state["listening"] = False
+            await asyncio.sleep(5)
+            try:
+                await client.connect()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
