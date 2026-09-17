@@ -67,6 +67,10 @@ TRANSLATIONS = {
             "Sizda public username yo'q — Telegram sozlamalaridan o'rnating "
             "yoki boshqa @username ko'rsating."
         ),
+        "stars_limit_error": (
+            "⚠️ Bitta buyurtmada {min_stars} dan {max_stars} tagacha yulduz "
+            "sotib olish mumkin. Miqdorni o'zgartirib, qayta urinib ko'ring."
+        ),
         "proof_received": (
             "✅ Chek qabul qilindi! Buyurtmangiz admin tomonidan tekshirilmoqda.\n\n"
             "⏳ <b>Sizning buyurtmangiz bajarilyabdi, iltimos kutib turing</b> — "
@@ -80,6 +84,22 @@ TRANSLATIONS = {
         "order_rejected": (
             "❌ Buyurtma #{order_id} bo'yicha to'lov tasdiqlanmadi.\n"
             "Xato deb hisoblasangiz — operator bilan bog'laning."
+        ),
+        "order_cancelled_by_admin": (
+            "🚫 Buyurtma #{order_id} sotuvchi tomonidan bekor qilindi.\n"
+            "Agar pul yechilgan bo'lsa — operatorga yozing, qaytarib beramiz."
+        ),
+        "cart_cancelled_by_admin": (
+            "🚫 Savatdagi buyurtmalar sotuvchi tomonidan bekor qilindi.\n"
+            "Agar pul yechilgan bo'lsa — operatorga yozing, qaytarib beramiz."
+        ),
+        "order_cancel_requested": (
+            "📨 Buyurtma #{order_id} ni bekor qilish so'rovi yuborildi.\n"
+            "Operator tez orada ko'rib chiqadi."
+        ),
+        "order_cancel_kept": (
+            "ℹ️ Buyurtma #{order_id} bekor qilinmadi — u hali bajarilmoqda.\n"
+            "Savollaringiz bo'lsa operatorga yozing."
         ),
         "order_check_title": "Buyurtmani tekshiring:",
         "order_check_item": "Mahsulot",
@@ -157,6 +177,10 @@ TRANSLATIONS = {
             "У вас нет публичного username — установите в настройках Telegram "
             "или укажите другой @username."
         ),
+        "stars_limit_error": (
+            "⚠️ За один заказ можно купить от {min_stars} до {max_stars} звёзд. "
+            "Измените количество и попробуйте снова."
+        ),
         "proof_received": (
             "✅ Чек получен! Заказ отправлен на проверку админу.\n\n"
             "⏳ <b>Ваш заказ выполняется, пожалуйста подождите</b> — "
@@ -170,6 +194,22 @@ TRANSLATIONS = {
         "order_rejected": (
             "❌ Оплата по заказу #{order_id} не подтверждена.\n"
             "Если считаете это ошибкой — напишите оператору."
+        ),
+        "order_cancelled_by_admin": (
+            "🚫 Заказ #{order_id} отменён продавцом.\n"
+            "Если деньги были списаны — напишите оператору, вернём."
+        ),
+        "cart_cancelled_by_admin": (
+            "🚫 Заказы из корзины отменены продавцом.\n"
+            "Если деньги были списаны — напишите оператору, вернём."
+        ),
+        "order_cancel_requested": (
+            "📨 Запрос на отмену заказа #{order_id} отправлен.\n"
+            "Оператор скоро его рассмотрит."
+        ),
+        "order_cancel_kept": (
+            "ℹ️ Заказ #{order_id} не отменён — он ещё выполняется.\n"
+            "Если есть вопросы, напишите оператору."
         ),
         "order_check_title": "Проверьте заказ:",
         "order_check_item": "Товар",
@@ -247,6 +287,10 @@ TRANSLATIONS = {
             "You don't have a public username — set one in Telegram settings "
             "or specify a different @username."
         ),
+        "stars_limit_error": (
+            "⚠️ You can buy between {min_stars} and {max_stars} stars per order. "
+            "Change the amount and try again."
+        ),
         "proof_received": (
             "✅ Receipt received! Your order was sent to the admin for review.\n\n"
             "⏳ <b>Your order is being processed, please wait</b> — "
@@ -260,6 +304,22 @@ TRANSLATIONS = {
         "order_rejected": (
             "❌ Payment for order #{order_id} was not confirmed.\n"
             "If you think this is a mistake — contact the operator."
+        ),
+        "order_cancelled_by_admin": (
+            "🚫 Order #{order_id} was cancelled by the seller.\n"
+            "If you were charged — contact the operator and we'll refund you."
+        ),
+        "cart_cancelled_by_admin": (
+            "🚫 The orders in your cart were cancelled by the seller.\n"
+            "If you were charged — contact the operator and we'll refund you."
+        ),
+        "order_cancel_requested": (
+            "📨 A cancellation request for order #{order_id} has been sent.\n"
+            "The operator will review it shortly."
+        ),
+        "order_cancel_kept": (
+            "ℹ️ Order #{order_id} was not cancelled — it's still being fulfilled.\n"
+            "If you have questions, contact the operator."
         ),
         "order_check_title": "Check your order:",
         "order_check_item": "Item",

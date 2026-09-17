@@ -29,7 +29,7 @@ from database.db import (
 )
 from handlers.states import OrderStates
 from services.i18n import t
-from services.prices import format_uzs
+from services.prices import format_uzs, STARS_MIN, STARS_MAX
 
 # Что вообще можно положить в корзину
 CART_CATEGORIES = ("stars", "stars_custom", "premium", "simple_gift")
@@ -106,6 +106,11 @@ def normalize_lines(raw_lines, user_id: int, username: str | None) -> list[dict]
             if stars_amount <= 0:
                 raise CartError("bad_stars")
             total_stars = stars_amount * qty
+            # Fragment принимает только 50..1 000 000 звёзд за раз. Раньше этой
+            # проверки не было, и заказ на 10 млн звёзд спокойно создавался,
+            # оплачивался — и падал уже на выполнении, зависая навсегда.
+            if not (STARS_MIN <= total_stars <= STARS_MAX):
+                raise CartError("stars_limit")
             rows.append({
                 **base,
                 "category": "stars",

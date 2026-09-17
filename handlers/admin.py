@@ -297,6 +297,8 @@ async def admin_help(message: Message):
         "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
         "/cancel &lt;id&gt; — отменить заказ на любом этапе, даже уже оплаченный "
         "(напр. /cancel 19) — снимает его у клиента из витрины\n"
+        "/tonwallet — кошелёк магазина: адрес, баланс, лимиты и последние "
+        "автоплатежи (проверь ПЕРЕД включением автооплаты)\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
@@ -688,6 +690,63 @@ async def reject_cart_payment(call: CallbackQuery, bot: Bot):
         pass
 
 
+@router.message(Command("tonwallet"))
+async def ton_wallet_cmd(message: Message):
+    """
+    Проверка кошелька ДО включения автоплатежа.
+
+    Главное, что здесь видно, — какой адрес получается из сид-фразы. У одной
+    и той же фразы версии V5R1 и V4R2 дают РАЗНЫЕ адреса, и деньги лежат
+    только на одном. Поэтому показываем оба с балансами: тот, где баланс и
+    который совпадает с кошельком из marketapp.org, и надо указать в
+    TON_WALLET_VERSION. Команда ничего не отправляет и не подписывает.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.db import get_ton_payments, get_ton_spent_today_nano
+    from services import ton_wallet
+
+    lines = ["🔑 <b>TON-кошелёк магазина</b>\n"]
+    lines.append(f"Автоплатёж: {'✅ включён' if config.TON_AUTO_PAY_ENABLED else '❌ выключен'}")
+    lines.append(f"Сид-фраза: {'задана' if config.TON_WALLET_MNEMONIC else '❌ НЕ задана'}")
+    lines.append(f"Версия в настройках: <code>{config.TON_WALLET_VERSION}</code>")
+    lines.append(
+        f"Лимиты: {config.TON_AUTO_PAY_MAX_TON} TON за раз, "
+        f"{config.TON_AUTO_PAY_DAILY_MAX_TON} TON в сутки"
+    )
+
+    if config.TON_WALLET_MNEMONIC:
+        lines.append("\n<b>Адреса из твоей сид-фразы:</b>")
+        for version in ("v5r1", "v4r2"):
+            try:
+                info = await ton_wallet.get_wallet_info(version)
+                bal = info.get("balance_ton")
+                bal_text = f"{bal:.4f} TON" if isinstance(bal, (int, float)) else "баланс не получен"
+                lines.append(f"\n<b>{version}</b>\n<code>{info['address']}</code>\n{bal_text}")
+            except Exception as e:
+                lines.append(f"\n<b>{version}</b> — ошибка: {e}")
+        lines.append(
+            "\n\n👆 Укажи в <code>TON_WALLET_VERSION</code> ту версию, чей адрес "
+            "совпадает с кошельком, которым ты генерировал токен на marketapp.org."
+        )
+
+    spent = await get_ton_spent_today_nano()
+    lines.append(f"\n\n💸 Потрачено сегодня: {spent / 1_000_000_000:.4f} TON")
+
+    payments = await get_ton_payments(5)
+    if payments:
+        lines.append("\n<b>Последние автоплатежи:</b>")
+        icon = {"sent": "✅", "failed": "❌", "sending": "⏳"}
+        for p in payments:
+            lines.append(
+                f"{icon.get(p['status'], '•')} #{p['order_id']} {p['purpose']} — "
+                f"{p['amount_nano'] / 1_000_000_000:.4f} TON"
+            )
+
+    await message.answer("\n".join(lines), disable_web_page_preview=True)
+
+
 @router.message(Command("cancel"))
 async def cancel_order_cmd(message: Message, command, bot: Bot):
     """
@@ -819,6 +878,55 @@ async def cancel_cart_admin(call: CallbackQuery, bot: Bot):
         await bot.send_message(orders[0]["user_id"], t(lang, "cart_cancelled_by_admin"))
     except Exception:
         pass
+
+
+@router.callback_query(F.data.startswith("admin:rentconnect:"))
+async def retry_rent_connect(call: CallbackQuery, bot: Bot):
+    """
+    Повторить подключение аренды прямо сейчас — после того, как админ
+    подтвердил ton://-перевод в кошельке. Ждать очередного автоповтора
+    (до 10 минут) в этот момент незачем.
+    """
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    order_id = int(call.data.split(":")[2])
+    order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+
+    link = (order.get("rent_link") or "").strip()
+    if not link:
+        await call.answer("Клиент ещё не прислал ссылку", show_alert=True)
+        return
+
+    await call.answer("Пробую подключить...")
+
+    from services.rent_connect import attempt_connect, explain_error
+
+    ok, err = await attempt_connect(bot, order, link)
+    if ok:
+        lang = await _get_user_language(order["user_id"])
+        from services.rent_connect import SUCCESS as RENT_SUCCESS
+
+        try:
+            await bot.send_message(
+                order["user_id"],
+                RENT_SUCCESS.get(lang if lang in RENT_SUCCESS else "uz").format(
+                    item=order["item_name"]
+                ),
+            )
+        except Exception:
+            pass
+        await _append_note(call, f"\n\n✅ Аренда подключена (заказ #{order_id})")
+    else:
+        await _append_note(
+            call,
+            f"\n\n❌ Снова не вышло: {err}\n{explain_error(Exception(err))}",
+            reply_markup=call.message.reply_markup,
+        )
 
 
 @router.callback_query(F.data.startswith("admin:keep:"))

@@ -259,6 +259,16 @@ async def start_rent_payment(bot: Bot, order: dict, nft_address: str,
                 pass
         return
 
+    # Пробуем оплатить аренду автоматически с кошелька магазина. Клиент уже
+    # заплатил (статус заказа paid — иначе сюда бы не дошли), поэтому ждать
+    # ручного подтверждения в Tonkeeper незачем. Не вышло — молча откатываемся
+    # на ручную ссылку ниже, как было раньше.
+    from services.ton_autopay import autopay_or_none
+
+    paid = await autopay_or_none(bot, tx, order, purpose="rent", what=f"аренда «{order['item_name']}»")
+    if paid:
+        return
+
     links = build_ton_deeplinks(tx)
     # <code> вместо голого текста — Telegram даёт скопировать ссылку одним
     # тапом целиком, а не пытается автоматически превратить её в кликабельную
@@ -267,10 +277,13 @@ async def start_rent_payment(bot: Bot, order: dict, nft_address: str,
     text = (
         f"🖼 Заказ #{order['id']} — аренда «{order['item_name']}» на {days} дн.\n"
         f"Получатель: {order['recipient']}\n\n"
+        f"❗️ <b>Клиент уже заплатил. Пока ты не подтвердишь этот перевод в "
+        f"кошельке, аренды не существует</b> — подключить гифт клиенту будет "
+        f"нельзя (marketapp ответит «forbidden»).\n\n"
         f"⚠️ Подтверди оплату ИМЕННО тем кошельком, которым генерировал API-токен "
         f"на marketapp.org:\n" + links_block +
-        "\n\nПосле оплаты гифт появится во вкладке Rented на marketapp.org — "
-        "передай его получателю и нажми «Заказ выполнен»."
+        "\n\nПосле оплаты гифт появится во вкладке Rented на marketapp.org. "
+        "Ссылку клиента бот подключит сам — тебе останется нажать «Заказ выполнен»."
     )
     for admin_id in config.ADMIN_IDS:
         try:

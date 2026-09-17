@@ -41,6 +41,19 @@ def admin_cancel_kb(order_id: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def admin_rent_retry_kb(order_id: int) -> InlineKeyboardMarkup:
+    """
+    Аренду не удалось подключить — обычно потому, что ton://-перевод ещё не
+    подтверждён в кошельке. Кнопка позволяет повторить попытку сразу после
+    оплаты, не дожидаясь следующего автоматического повтора.
+    """
+    b = InlineKeyboardBuilder()
+    b.button(text="🔗 Подключить сейчас", callback_data=f"admin:rentconnect:{order_id}")
+    b.button(text="🚫 Отменить заказ", callback_data=f"admin:cancel:{order_id}")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def admin_cancel_cart_kb(cart_id: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="🚫 Отменить всю корзину", callback_data=f"admin:cancel_cart:{cart_id}")

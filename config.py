@@ -15,9 +15,33 @@ PAYMENT_CARD_HOLDER = os.getenv("PAYMENT_CARD_HOLDER", "IVANOV IVAN")
 PAYMENT_CLICK_LINK = os.getenv("PAYMENT_CLICK_LINK", "")
 PAYMENT_PAYME_LINK = os.getenv("PAYMENT_PAYME_LINK", "")
 
-# TON-кошелёк для автоматизации больше не хранится в .env — бот готовит
-# транзакции через API MarketApp, а подписывает их админ вручную в своём
-# кошельке (Tonkeeper и т.п.) по ссылке, которую присылает бот.
+# ---- Автоматическая оплата покупок с TON-кошелька магазина ----
+# Без этого бот только присылает админу ton://-ссылку, и КАЖДУЮ покупку звёзд
+# и аренду приходится подтверждать руками в Tonkeeper — магазин не работает,
+# пока админ не у телефона.
+#
+# ⚠️ Заводи сюда ОТДЕЛЬНЫЙ рабочий кошелёк с небольшим остатком, а не основной:
+# сид-фраза лежит в переменных Railway, и доступ к ним = доступ к кошельку.
+# Это тот же кошелёк, которым сгенерирован API-токен на marketapp.org —
+# другого MarketApp не примет.
+TON_AUTO_PAY_ENABLED = os.getenv("TON_AUTO_PAY_ENABLED", "false").lower() == "true"
+
+# 24 слова через пробел
+TON_WALLET_MNEMONIC = os.getenv("TON_WALLET_MNEMONIC", "").strip()
+
+# Версия кошелька: v5r1 — современный Tonkeeper (W5), v4r2 — более старый.
+# У одной сид-фразы это РАЗНЫЕ адреса с разными балансами. Какой именно у
+# тебя — покажет команда /tonwallet: она выведет оба адреса с балансами.
+TON_WALLET_VERSION = os.getenv("TON_WALLET_VERSION", "v5r1").strip()
+
+# Потолки, чтобы ошибка в цене или в API не увела кошелёк целиком.
+# Разовый лимит бери с запасом к самой дорогой позиции в магазине.
+TON_AUTO_PAY_MAX_TON = float(os.getenv("TON_AUTO_PAY_MAX_TON", "5"))
+TON_AUTO_PAY_DAILY_MAX_TON = float(os.getenv("TON_AUTO_PAY_DAILY_MAX_TON", "50"))
+
+# Ключ toncenter.ai — необязателен, но без него жёсткие лимиты на запросы
+# (бесплатный ключ берётся у @tonapibot в Telegram).
+TONCENTER_API_KEY = os.getenv("TONCENTER_API_KEY", "").strip()
 
 DB_PATH = os.getenv("DB_PATH", "data/shop.db")
 

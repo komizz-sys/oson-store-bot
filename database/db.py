@@ -54,6 +54,29 @@ CREATE TABLE IF NOT EXISTS support_messages (
 );
 """
 
+# Журнал автоплатежей с TON-кошелька магазина. Здесь настоящие деньги, поэтому:
+#
+# 1) UNIQUE(order_id, purpose) — главная защита от ДВОЙНОЙ оплаты. Повторить
+#    попытку может кто угодно: перезапуск бота на Railway, повторное нажатие
+#    кнопки админом, автоповтор после таймаута сети. Строка вставляется ДО
+#    отправки транзакции — если такая уже есть, вторая оплата просто не
+#    начнётся. Потерять 0.29 TON на дубле обиднее, чем разбираться с зависшей
+#    строкой в статусе 'sending'.
+# 2) Журнал нужен и для суточного лимита: сколько уже потрачено за сегодня.
+CREATE_TON_PAYMENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS ton_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    purpose TEXT NOT NULL,           -- rent | stars | premium
+    amount_nano INTEGER NOT NULL,    -- сколько списываем, в нанотонах
+    destination TEXT,
+    status TEXT DEFAULT 'sending',   -- sending -> sent / failed
+    error TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (order_id, purpose)
+);
+"""
+
 
 async def init_db():
     # Папка под базу может не существовать — например, при первом запуске на
@@ -68,6 +91,7 @@ async def init_db():
         await db.execute(CREATE_USERS_TABLE)
         await db.execute(CREATE_ORDERS_TABLE)
         await db.execute(CREATE_SUPPORT_TABLE)
+        await db.execute(CREATE_TON_PAYMENTS_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
@@ -533,3 +557,72 @@ async def mark_reminder_sent(order_id: int):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("UPDATE orders SET reminder_sent = 1 WHERE id = ?", (order_id,))
         await db.commit()
+
+
+# ---- Журнал автоплатежей с TON-кошелька (см. services/ton_wallet.py) ----
+
+async def claim_ton_payment(order_id: int, purpose: str, amount_nano: int,
+                            destination: str | None) -> bool:
+    """
+    «Забронировать» оплату заказа ДО отправки транзакции.
+
+    Возвращает False, если платёж по этой паре (заказ, назначение) уже
+    начинали — значит, повторять нельзя. Именно эта строчка защищает от
+    двойного списания при перезапуске бота, повторном нажатии кнопки или
+    автоповторе после обрыва сети: вставка упадёт на UNIQUE-ограничении.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        try:
+            await db.execute(
+                """INSERT INTO ton_payments (order_id, purpose, amount_nano, destination, status)
+                   VALUES (?, ?, ?, ?, 'sending')""",
+                (order_id, purpose, amount_nano, destination),
+            )
+            await db.commit()
+            return True
+        except Exception:
+            return False  # уже есть такая пара — платёж повторять нельзя
+
+
+async def finish_ton_payment(order_id: int, purpose: str, ok: bool, error: str | None = None):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE ton_payments SET status = ?, error = ? WHERE order_id = ? AND purpose = ?",
+            ("sent" if ok else "failed", (error or "")[:500] or None, order_id, purpose),
+        )
+        await db.commit()
+
+
+async def release_ton_payment(order_id: int, purpose: str):
+    """
+    Снять бронь — только для случаев, когда транзакция ТОЧНО не ушла
+    (не прошли проверки лимитов, кошелёк не настроен и т.п.). Если есть хоть
+    малейший шанс, что транзакция улетела в сеть, бронь НЕ снимаем: лучше
+    разобраться вручную, чем заплатить дважды.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM ton_payments WHERE order_id = ? AND purpose = ? AND status = 'sending'",
+            (order_id, purpose),
+        )
+        await db.commit()
+
+
+async def get_ton_spent_today_nano() -> int:
+    """Сколько нанотонов уже списано (или в процессе списания) за сегодня."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            """SELECT COALESCE(SUM(amount_nano), 0) FROM ton_payments
+               WHERE status != 'failed' AND date(created_at) = date('now')"""
+        ) as cur:
+            row = await cur.fetchone()
+            return int(row[0] or 0)
+
+
+async def get_ton_payments(limit: int = 10) -> list[dict]:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM ton_payments ORDER BY id DESC LIMIT ?", (limit,)
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]

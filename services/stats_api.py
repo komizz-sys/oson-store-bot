@@ -24,7 +24,6 @@ from database.db import (
     get_pending_rent_link_order, set_rent_link, get_order, set_order_status,
     attach_payment_proof, get_cart_orders, set_cart_status, attach_cart_payment_proof,
 )
-from services import marketapp_api
 
 # Тот же формат ссылки, что принимает обработчик в чате (handlers/rent_link.py)
 _RENT_LINK_RE = re.compile(r"^(tc://\S+|https?://\S+|t\.me/\S+)$", re.IGNORECASE)
@@ -37,6 +36,12 @@ from services.order_processing import process_order, OrderError
 # подтверждение/отмена заказа кнопками в чате работает как обычно).
 _bot = None
 _storage = None
+
+# Когда по заказу последний раз уходила просьба об отмене (order_id -> монотонное
+# время). Живёт в памяти процесса: если бот перезапустится, максимум придёт одно
+# лишнее сообщение — ради этого городить таблицу в базе незачем.
+_CANCEL_REQUEST_SENT: dict[int, float] = {}
+_CANCEL_REQUEST_COOLDOWN = 15 * 60  # секунд
 
 PERIOD_TO_SQL = {
     "today": "datetime('now', 'start of day')",
@@ -198,40 +203,36 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
 
     await set_rent_link(order["id"], link)
 
-    try:
-        await marketapp_api.rent_connect_tonconnect(order["nft_address"], link)
-    except Exception as e:
-        # Не врём клиенту про успех — говорим, что подключит оператор, и зовём админа.
-        for admin_id in config.ADMIN_IDS:
-            try:
-                await _bot.send_message(
-                    admin_id,
-                    f"⚠️ Заказ #{order['id']} ({order['item_name']}) — АВТОподключение аренды "
-                    f"не удалось: {e}\n\nСсылка клиента:\n<code>{link}</code>\n\n"
-                    "Подключи вручную на marketapp.org, затем нажми «Заказ выполнен».",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
-        return web.json_response({"ok": False, "error": "connect_failed"})
+    # Подключение и повторы — общий код с обработчиком ссылки из чата
+    # (services/rent_connect.py). Ответ витрине зависит от того, получилось ли
+    # подключить СРАЗУ: если нет — это почти всегда «админ ещё не подтвердил
+    # ton://-перевод», бот дожмёт сам за несколько минут, и витрине надо
+    # сказать «ждём», а не «ошибка».
+    from services.rent_connect import connect_rent_link
 
-    for admin_id in config.ADMIN_IDS:
-        try:
-            await _bot.send_message(
-                admin_id,
-                f"✅ Заказ #{order['id']} ({order['item_name']}) — аренда подключена "
-                f"АВТОМАТИЧЕСКИ клиенту {order['recipient']}. Вручную ничего делать не нужно.",
-            )
-        except Exception:
-            pass
-    return web.json_response({"ok": True, "item_name": order["item_name"], "order_id": order["id"]})
+    connected = await connect_rent_link(_bot, order, link, announce_start=False)
+    return web.json_response({
+        "ok": True,
+        "connected": connected,
+        "pending": not connected,
+        "item_name": order["item_name"],
+        "order_id": order["id"],
+    })
 
 
 async def handle_cancel_order(request: web.Request) -> web.Response:
     """
-    Отмена заказа самим клиентом — только своего и только пока он ещё
-    не оплачен (после подтверждения оплаты отменять нельзя: деньги уже
-    получены, тут нужен админ).
+    Отмена заказа самим клиентом из витрины.
+
+    Два разных случая, и путать их нельзя:
+    - заказ ещё НЕ оплачен (awaiting_payment / payment_review) — клиент
+      отменяет его сам, мгновенно: денег у продавца нет, спрашивать нечего;
+    - заказ УЖЕ оплачен (paid / fulfilling) — сам клиент отменить не может,
+      иначе он одной кнопкой «терял» бы свои же деньги. Вместо отмены уходит
+      ЗАПРОС продавцу, тот решает кнопками: отменить или оставить в работе.
+
+    Раньше второго случая не было вовсе, и заказ, который не удалось
+    выполнить, навсегда висел у клиента активным и блокировал новые заказы.
     """
     try:
         body = await request.json()
@@ -246,15 +247,57 @@ async def handle_cancel_order(request: web.Request) -> web.Response:
     # Проверяем владельца — иначе по чужому id можно было бы отменить чужой заказ
     if not order or order["user_id"] != user["id"]:
         return web.json_response({"error": "not_found"}, status=404)
-    if order["status"] not in ("awaiting_payment", "payment_review"):
-        return web.json_response({"error": "too_late"}, status=400)
 
-    if order.get("cart_id"):
-        # Корзина оплачивается одной суммой — и отменяется только целиком
-        await set_cart_status(order["cart_id"], "rejected", "Отменён клиентом")
-    else:
-        await set_order_status(order["id"], "rejected", "Отменён клиентом")
-    return web.json_response({"ok": True})
+    if order["status"] in ("awaiting_payment", "payment_review"):
+        if order.get("cart_id"):
+            # Корзина оплачивается одной суммой — и отменяется только целиком
+            await set_cart_status(order["cart_id"], "rejected", "Отменён клиентом")
+        else:
+            await set_order_status(order["id"], "rejected", "Отменён клиентом")
+        return web.json_response({"ok": True, "cancelled": True})
+
+    if order["status"] in ("paid", "fulfilling"):
+        # Повторные нажатия не шлём админу — иначе один нетерпеливый клиент
+        # завалит чат десятком одинаковых просьб. Клиенту при этом отвечаем
+        # так же, как в первый раз: для него ничего не изменилось.
+        import time
+
+        now = time.monotonic()
+        last = _CANCEL_REQUEST_SENT.get(order["id"], 0)
+        if now - last > _CANCEL_REQUEST_COOLDOWN:
+            _CANCEL_REQUEST_SENT[order["id"]] = now
+            await _request_cancel_from_admin(order, user)
+        return web.json_response({"ok": True, "requested": True})
+
+    # completed / rejected — отменять уже нечего
+    return web.json_response({"error": "too_late"}, status=400)
+
+
+async def _request_cancel_from_admin(order: dict, user: dict) -> None:
+    """Просьба клиента отменить оплаченный заказ — уходит админу с кнопками."""
+    from keyboards.admin_kb import admin_cancel_request_kb
+
+    from services.prices import format_uzs
+
+    who = f"@{user.get('username')}" if user.get("username") else f"id {user['id']}"
+    text = (
+        f"🙋 Клиент просит отменить оплаченный заказ #{order['id']}.\n"
+        f"От: {who}\n"
+        f"Товар: {order['item_name']}\n"
+        f"Получатель: {order['recipient']}\n"
+        f"Сумма: {format_uzs(order['price_uzs'])}\n\n"
+        "Если деньги реально не приходили (фейковый чек) — жми «Отменить»."
+    )
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await _bot.send_message(
+                admin_id,
+                text,
+                reply_markup=admin_cancel_request_kb(order["id"], order.get("cart_id")),
+            )
+        except Exception:
+            pass
 
 
 async def handle_submit_receipt(request: web.Request) -> web.Response:

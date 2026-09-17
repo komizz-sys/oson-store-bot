@@ -1613,7 +1613,11 @@ function renderOrderFlow(statusChanged) {
     // Точная сумма к переводу + предупреждение про комиссию банка: если банк
     // удержит её из перевода, на карту придёт меньше и автоподтверждение не
     // сработает — человек должен узнать об этом ДО оплаты, а не после.
-    const exact = s.pay_amount && s.pay_amount !== s.price_uzs
+    // Блок с точной суммой показываем ВСЕГДА, даже если она совпала с ценой:
+    // человек должен видеть, сколько именно перевести, и предупреждение про
+    // комиссию банка. Раньше блок появлялся только при уникальной сумме — и
+    // без неё предупреждения не было вообще.
+    const exact = s.pay_amount
       ? '<div class="rounded-2xl p-3 mb-3 text-left" style="background: rgba(217,180,91,0.10); border: 1px solid rgba(217,180,91,0.35);">' +
           '<div class="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">' + t("flow_pay_exact") + '</div>' +
           '<div class="text-[19px] font-black text-neon-yellow leading-none mb-2">' + fmtUZS(s.pay_amount) + '</div>' +
@@ -1689,6 +1693,62 @@ function renderOrderFlow(statusChanged) {
   flowTipTimer = setInterval(paintTip, 3000);
 }
 
+/**
+ * Сжимает фото чека перед отправкой.
+ *
+ * Зачем: фото с телефона весит 3-6 МБ, а в base64 — ещё на треть больше.
+ * Такой запрос и по мобильному интернету идёт долго, и упирается в лимиты
+ * сервера (именно на этом чеки и обрывались с "bad request body"). Для чтения
+ * суммы на чеке хватает картинки в 1600px и JPEG-качества 0.8 — это обычно
+ * 200-400 КБ, то есть в 10-20 раз меньше.
+ *
+ * Если браузер по какой-то причине не смог перерисовать картинку (редкий
+ * формат, нет памяти) — возвращаем null, и файл уйдёт как есть.
+ */
+function compressReceipt(file, maxSide, quality) {
+  return new Promise(function(resolve) {
+    let url;
+    try { url = URL.createObjectURL(file); } catch (e) { resolve(null); return; }
+
+    const img = new Image();
+    img.onload = function() {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        URL.revokeObjectURL(url);
+        resolve(dataUrl.indexOf(",") > 0 ? dataUrl.split(",")[1] : null);
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      }
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
+/** Читает файл как base64 без сжатия — запасной путь. */
+function readFileBase64(file) {
+  return new Promise(function(resolve, reject) {
+    const r = new FileReader();
+    r.onload = function() { resolve(String(r.result).split(",")[1]); };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+/** Готовит чек к отправке: сначала пробуем сжать, иначе — как есть. */
+async function receiptToBase64(file) {
+  const compressed = await compressReceipt(file, 1600, 0.8);
+  if (compressed) return compressed;
+  return await readFileBase64(file);
+}
+
 async function flowSubmitReceipt() {
   const input = document.getElementById("flow-receipt-input");
   const btn = document.getElementById("flow-receipt-btn");
@@ -1697,7 +1757,7 @@ async function flowSubmitReceipt() {
 
   const file = input.files[0];
   errorEl.classList.add("hidden");
-  if (file.size > 8 * 1024 * 1024) {
+  if (file.size > 25 * 1024 * 1024) {
     errorEl.textContent = t("ao_err_too_big"); errorEl.classList.remove("hidden"); return;
   }
 
@@ -1710,12 +1770,7 @@ async function flowSubmitReceipt() {
   btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
 
   try {
-    const base64 = await new Promise(function(resolve, reject) {
-      const r = new FileReader();
-      r.onload = function() { resolve(String(r.result).split(",")[1]); };
-      r.onerror = reject;
-      r.readAsDataURL(file);
-    });
+    const base64 = await receiptToBase64(file);
     const res = await fetch(base + "/public/submit_receipt", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ initData: initData, order_id: flowStatus.order_id, image_base64: base64 }),
@@ -2363,7 +2418,7 @@ async function submitReceipt(orderId) {
 
   const file = input.files[0];
   errorEl.classList.add("hidden");
-  if (file.size > 8 * 1024 * 1024) {
+  if (file.size > 25 * 1024 * 1024) {
     errorEl.textContent = t("ao_err_too_big"); errorEl.classList.remove("hidden"); return;
   }
 
@@ -2376,12 +2431,7 @@ async function submitReceipt(orderId) {
   btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full align-middle" style="animation: spin .7s linear infinite;"></span>';
 
   try {
-    const base64 = await new Promise(function(resolve, reject) {
-      const r = new FileReader();
-      r.onload = function() { resolve(String(r.result).split(",")[1]); };
-      r.onerror = reject;
-      r.readAsDataURL(file);
-    });
+    const base64 = await receiptToBase64(file);
     const res = await fetch(base + "/public/submit_receipt", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ initData: initData, order_id: orderId, image_base64: base64 }),

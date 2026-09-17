@@ -17,13 +17,21 @@ from aiogram.fsm.context import FSMContext
 
 from handlers.states import OrderStates
 from keyboards.user_kb import confirm_order_kb
-from services.prices import format_uzs
+from services.prices import format_uzs, STARS_MIN, STARS_MAX
 from services.i18n import t
 from database.db import get_user_language, upsert_user
 
 
 class OrderError(Exception):
     """Ошибка валидации заказа — пользователю уже отправлено сообщение с текстом."""
+
+
+def _as_int_or_zero(value) -> int:
+    """Количество из мини-аппа приходит как есть — строкой, None или мусором."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _shift_date(sql_dt: str, days: int) -> str:
@@ -208,6 +216,21 @@ async def process_order(
             "quantity": payload.get("quantity", 1),
             "recipient": recipient,
         }
+        if category in ("stars", "stars_custom"):
+            # Fragment принимает 50..1 000 000 звёзд за заказ. Проверяем здесь,
+            # а не только в витрине: количество из мини-аппа приходит обычным
+            # полем запроса и его можно подменить. Пропущенный заказ дошёл бы
+            # до оплаты и упал на выполнении, зависнув у клиента активным.
+            stars_qty = _as_int_or_zero(data.get("quantity"))
+            if not (STARS_MIN <= stars_qty <= STARS_MAX):
+                lang = await get_user_language(user_id)
+                text = t(lang, "stars_limit_error").format(
+                    min_stars=f"{STARS_MIN:,}".replace(",", " "),
+                    max_stars=f"{STARS_MAX:,}".replace(",", " "),
+                )
+                await bot.send_message(user_id, text)
+                raise OrderError(text)
+
         if category == "simple_gift":
             data["nft_address"] = payload["gift_id"]  # переиспользуем поле под gift_id
             # Защита от накрутки количества мимо интерфейса (в магазине максимум 10)
