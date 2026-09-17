@@ -15,7 +15,7 @@ from database.db import (
     get_order, set_order_status, get_stats, get_all_user_ids,
     get_cart_orders, set_cart_status,
 )
-from keyboards.admin_kb import admin_fulfill_kb
+from keyboards.admin_kb import admin_fulfill_kb, admin_cancel_kb
 from services.prices import format_uzs
 from services.fragment_service import try_auto_fulfill_stars, notify_manual_premium
 from services.marketapp_service import start_rent_payment
@@ -295,6 +295,8 @@ async def admin_help(message: Message):
         "/stats — статистика по пользователям и заказам\n"
         "/broadcast — разослать сообщение всем пользователям\n"
         "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
+        "/cancel &lt;id&gt; — отменить заказ на любом этапе, даже уже оплаченный "
+        "(напр. /cancel 19) — снимает его у клиента из витрины\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
@@ -686,6 +688,164 @@ async def reject_cart_payment(call: CallbackQuery, bot: Bot):
         pass
 
 
+@router.message(Command("cancel"))
+async def cancel_order_cmd(message: Message, command, bot: Bot):
+    """
+    Отмена заказа по номеру: /cancel 19
+
+    Нужна для «старых» заказов, под сообщениями которых кнопки отмены ещё нет,
+    и вообще как запасной путь, если нужное сообщение потерялось в переписке.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    arg = (command.args or "").strip().lstrip("#")
+    if not arg.isdigit():
+        await message.answer("Укажите номер заказа: <code>/cancel 19</code>")
+        return
+
+    order_id = int(arg)
+    order = await get_order(order_id)
+    if not order:
+        await message.answer(f"Заказ #{order_id} не найден.")
+        return
+
+    if order["status"] in ("completed", "rejected"):
+        await message.answer(
+            f"Заказ #{order_id} уже закрыт (статус: {order['status']}). Отменять нечего."
+        )
+        return
+
+    if order.get("cart_id"):
+        await set_cart_status(order["cart_id"], "rejected", "Отменён продавцом")
+        key = "cart_cancelled_by_admin"
+        scope = f"вся корзина заказа #{order_id}"
+    else:
+        await set_order_status(order_id, "rejected", admin_comment="Отменён продавцом")
+        key = "order_cancelled_by_admin"
+        scope = f"заказ #{order_id}"
+
+    await message.answer(
+        f"🚫 Отменён {scope} — {order['item_name']} для {order['recipient']}.\n"
+        "У клиента он больше не висит активным, можно оформлять новый."
+    )
+
+    lang = await _get_user_language(order["user_id"])
+    try:
+        await bot.send_message(order["user_id"], t(lang, key).format(order_id=order_id))
+    except Exception:
+        await message.answer("⚠️ Клиенту сообщить не удалось (закрыл чат с ботом).")
+
+
+async def _append_note(call: CallbackQuery, note: str, reply_markup=None) -> None:
+    """
+    Дописать пометку к сообщению админа. Отдельная функция, потому что чек
+    приходит картинкой (у неё caption), а предупреждения об ошибках —
+    обычным текстом: edit_caption на тексте падает, и наоборот.
+    """
+    try:
+        if call.message.caption is not None:
+            await call.message.edit_caption(
+                caption=(call.message.caption or "") + note, reply_markup=reply_markup
+            )
+        else:
+            await call.message.edit_text(
+                (call.message.text or "") + note, reply_markup=reply_markup
+            )
+    except Exception:
+        # Сообщение могло устареть или быть уже отредактировано — не мешаем отмене
+        pass
+
+
+@router.callback_query(F.data.startswith("admin:cancel:"))
+async def cancel_order_admin(call: CallbackQuery, bot: Bot):
+    """
+    Отмена заказа продавцом на ЛЮБОМ этапе — включая уже оплаченный.
+    Нужна для случаев, когда чек оказался фейковым, оплату подтвердили по
+    ошибке или автопокупка не прошла: без этой кнопки заказ навсегда висел
+    бы у клиента в витрине активным и блокировал новые заказы.
+    """
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    order_id = int(call.data.split(":")[2])
+    order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+
+    if order["status"] in ("completed", "rejected"):
+        await call.answer("Заказ уже закрыт", show_alert=True)
+        return
+
+    # Заказ из корзины отменяется целиком: оплата на неё была одна общая,
+    # отменить половину корзины нельзя — деньги не делятся.
+    if order.get("cart_id"):
+        await set_cart_status(order["cart_id"], "rejected", "Отменён продавцом")
+        key = "cart_cancelled_by_admin"
+    else:
+        await set_order_status(order_id, "rejected", admin_comment="Отменён продавцом")
+        key = "order_cancelled_by_admin"
+
+    await _append_note(call, f"\n\n🚫 Отменён продавцом (заказ #{order_id})")
+    await call.answer("Заказ отменён")
+
+    lang = await _get_user_language(order["user_id"])
+    try:
+        await bot.send_message(order["user_id"], t(lang, key).format(order_id=order_id))
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("admin:cancel_cart:"))
+async def cancel_cart_admin(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    cart_id = call.data.split(":", 2)[2]
+    orders = await get_cart_orders(cart_id)
+    if not orders:
+        await call.answer("Корзина не найдена", show_alert=True)
+        return
+
+    await set_cart_status(cart_id, "rejected", "Отменена продавцом")
+    await _append_note(call, "\n\n🚫 Корзина отменена продавцом")
+    await call.answer("Корзина отменена")
+
+    lang = await _get_user_language(orders[0]["user_id"])
+    try:
+        await bot.send_message(orders[0]["user_id"], t(lang, "cart_cancelled_by_admin"))
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("admin:keep:"))
+async def keep_order_admin(call: CallbackQuery, bot: Bot):
+    """Ответ на просьбу клиента отменить оплаченный заказ — оставляем в работе."""
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    order_id = int(call.data.split(":")[2])
+    order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+
+    await _append_note(call, "\n\n↩️ Оставлен в работе")
+    await call.answer("Оставлен в работе")
+
+    lang = await _get_user_language(order["user_id"])
+    try:
+        await bot.send_message(
+            order["user_id"], t(lang, "order_cancel_kept").format(order_id=order_id)
+        )
+    except Exception:
+        pass
+
+
 @router.callback_query(F.data.startswith("admin:done:"))
 async def mark_done(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id):
@@ -694,8 +854,12 @@ async def mark_done(call: CallbackQuery, bot: Bot):
 
     order_id = int(call.data.split(":")[2])
     order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+
     await set_order_status(order_id, "completed")
-    await call.message.edit_caption(caption=(call.message.caption or "") + "\n\n🎉 Выполнено")
+    await _append_note(call, "\n\n🎉 Выполнено")
     await call.answer("Отмечено как выполнено")
 
     lang = await _get_user_language(order["user_id"])
