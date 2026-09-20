@@ -77,18 +77,6 @@ CREATE TABLE IF NOT EXISTS ton_payments (
 );
 """
 
-# Кого не показывать в публичном рейтинге (вкладка TOP в витрине).
-# Нужно для своих тестовых аккаунтов и для случаев, когда заказ был реальным,
-# но светить клиента в топе не хочется. Сам заказ при этом остаётся в базе и в
-# статистике — скрывается только строка в рейтинге.
-CREATE_LEADERBOARD_HIDDEN_TABLE = """
-CREATE TABLE IF NOT EXISTS leaderboard_hidden (
-    user_id INTEGER PRIMARY KEY,
-    reason TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-"""
-
 
 async def init_db():
     # Папка под базу может не существовать — например, при первом запуске на
@@ -104,7 +92,6 @@ async def init_db():
         await db.execute(CREATE_ORDERS_TABLE)
         await db.execute(CREATE_SUPPORT_TABLE)
         await db.execute(CREATE_TON_PAYMENTS_TABLE)
-        await db.execute(CREATE_LEADERBOARD_HIDDEN_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
@@ -169,35 +156,16 @@ PAID_STATUSES = ("paid", "fulfilling", "completed")
 
 async def get_revenue_stats(since_sql: str | None, ton_gram_rate_uzs: int) -> dict:
     """
-    Доход и РАСХОД по категориям за период (или за всё время, если since_sql=None).
-
-    Откуда берётся расход — два источника, в порядке надёжности:
-
-    1) ЖУРНАЛ АВТОПЛАТЕЖЕЙ (ton_payments) — сколько TON реально ушло с
-       кошелька за конкретный заказ. Это не оценка, а факт: ровно та сумма,
-       которую подписал и отправил бот. Работает для заказов, оплаченных
-       автоматически (звёзды, аренда).
-
-    2) РАСЧЁТ ПО ЦЕНЕ АРЕНДЫ — base_price_per_day_gram * rent_days. Нужен
-       для заказов ДО включения автооплаты, когда админ платил вручную из
-       кошелька и в журнале записи нет.
-
-    Оба переводятся в сумы по ТЕКУЩЕМУ курсу TON: курс на момент сделки не
-    хранится, поэтому при сильном движении курса старые заказы посчитаются
-    чуть иначе. Для текущей недели/месяца разница незаметна.
-
-    Звёзды и премиум, купленные вручную (без автооплаты), в расход не
-    попадают — бот не может знать, сколько за них заплатили. Такие суммы
-    по-прежнему вносятся руками, и в ответе видно, сколько заказов
-    осталось непосчитанными.
-
+    Доход по категориям за период (или за всё время, если since_sql=None).
+    Для аренды (nft_rent) также считает реальный расход на MarketApp —
+    он известен точно: base_price_per_day_gram * rent_days, переведённый
+    в сум по ТЕКУЩЕМУ курсу (курс на момент самой аренды не хранится,
+    так что при сильном изменении курса цифра будет чуть приблизительной).
     -> {
-        "income_by_category": {...}, "income_total": int, "orders_count": int,
-        "rent_auto_cost_uzs": int,              # как раньше, для совместимости
-        "auto_cost_by_category": {...},         # факт из журнала + расчёт аренды
-        "auto_cost_total": int,
-        "ton_spent_gram": float,                # сколько TON списано за период
-        "orders_without_cost": int,             # заказы, по которым расход неизвестен
+        "income_by_category": {"stars": int, "premium": int, "simple_gift": int, "nft_rent": int},
+        "income_total": int,
+        "orders_count": int,
+        "rent_auto_cost_uzs": int,
     }
     """
     status_placeholders = ",".join("?" for _ in PAID_STATUSES)
@@ -214,124 +182,25 @@ async def get_revenue_stats(since_sql: str | None, ton_gram_rate_uzs: int) -> di
         ) as cur:
             rows = await cur.fetchall()
 
-        # Аренда, оплаченная ВРУЧНУЮ (в журнале автоплатежей записи нет) —
-        # считаем по цене лота. Заказы с автооплатой исключаем, иначе
-        # расход по ним посчитается дважды.
         async with db.execute(
-            f"""SELECT COALESCE(SUM(CAST(o.base_price_per_day_gram AS REAL) * o.rent_days), 0)
-                FROM orders o WHERE {where.replace('status', 'o.status').replace('created_at', 'o.created_at')}
-                AND o.category = 'nft_rent'
-                AND o.base_price_per_day_gram IS NOT NULL AND o.rent_days IS NOT NULL
-                AND NOT EXISTS (SELECT 1 FROM ton_payments p
-                                WHERE p.order_id = o.id AND p.status = 'sent')""",
+            f"""SELECT COALESCE(SUM(CAST(base_price_per_day_gram AS REAL) * rent_days), 0)
+                FROM orders WHERE {where} AND category = 'nft_rent'
+                AND base_price_per_day_gram IS NOT NULL AND rent_days IS NOT NULL""",
             params,
         ) as cur:
-            rent_gram_manual = (await cur.fetchone())[0] or 0
-
-        # Аренда с автооплатой — берём ФАКТ: сколько нанотонов реально ушло.
-        # Только аренда: у звёзд и премиума расход считается по закупочной
-        # цене (ниже), и брать их ещё и отсюда значило бы посчитать дважды.
-        async with db.execute(
-            f"""SELECT COALESCE(SUM(p.amount_nano), 0)
-                FROM ton_payments p JOIN orders o ON o.id = p.order_id
-                WHERE p.status = 'sent' AND o.category = 'nft_rent'
-                  AND {where.replace('status', 'o.status').replace('created_at', 'o.created_at')}""",
-            params,
-        ) as cur:
-            rent_nano_paid = (await cur.fetchone())[0] or 0
-
-        # Звёзды: сколько всего звёзд продано (quantity хранит их количество)
-        async with db.execute(
-            f"SELECT COALESCE(SUM(quantity), 0) FROM orders WHERE {where} AND category = 'stars'",
-            params,
-        ) as cur:
-            stars_sold = (await cur.fetchone())[0] or 0
-
-        # Премиум: закупка у каждого тарифа своя, поэтому считаем по названиям
-        async with db.execute(
-            f"SELECT item_name, COUNT(*) FROM orders WHERE {where} AND category = 'premium' GROUP BY item_name",
-            params,
-        ) as cur:
-            premium_rows = await cur.fetchall()
-
-        # Подарки: наценка фиксированная, остальное в цене — расход
-        async with db.execute(
-            f"""SELECT COALESCE(SUM(price_uzs), 0), COALESCE(SUM(quantity), 0)
-                FROM orders WHERE {where} AND category = 'simple_gift'""",
-            params,
-        ) as cur:
-            gift_price_total, gift_qty = await cur.fetchone()
+            rent_gram_total = (await cur.fetchone())[0] or 0
 
     income_by_category = {row[0]: row[1] for row in rows}
     orders_count = sum(row[2] for row in rows)
     income_total = sum(income_by_category.values())
-
-    NANO = 1_000_000_000
-    auto_cost_by_category: dict[str, int] = {}
-
-    # --- Аренда: факт по кошельку + расчёт для оплаченных вручную ---
-    rent_gram_total = (rent_nano_paid / NANO) + rent_gram_manual
-    if rent_gram_total:
-        auto_cost_by_category["nft_rent"] = round(rent_gram_total * ton_gram_rate_uzs)
-
-    # --- Звёзды: количество × закупочная цена звезды ---
-    if stars_sold:
-        auto_cost_by_category["stars"] = round(stars_sold * config.STARS_COST_UZS)
-
-    # --- Премиум: у каждого тарифа своя закупка (data/prices.json, cost_uzs) ---
-    premium_cost, premium_unknown = _premium_cost(premium_rows)
-    if premium_cost:
-        auto_cost_by_category["premium"] = premium_cost
-
-    # --- Подарки: цена минус наша наценка ---
-    if gift_price_total:
-        cost = gift_price_total - config.SIMPLE_GIFT_MARKUP_UZS * (gift_qty or 0)
-        auto_cost_by_category["simple_gift"] = max(0, round(cost))
+    rent_auto_cost_uzs = round(rent_gram_total * ton_gram_rate_uzs)
 
     return {
         "income_by_category": income_by_category,
         "income_total": income_total,
         "orders_count": orders_count,
-        # Старое поле оставлено как было — аналитика на него уже опирается
-        "rent_auto_cost_uzs": auto_cost_by_category.get("nft_rent", 0),
-        "auto_cost_by_category": auto_cost_by_category,
-        "auto_cost_total": sum(auto_cost_by_category.values()),
-        "ton_spent_gram": round(rent_gram_total, 4),
-        "stars_sold": stars_sold,
-        # Тарифы премиума, для которых закупка не указана в прайсе — их расход
-        # не посчитан, и об этом нужно честно сказать в отчёте
-        "premium_unknown": premium_unknown,
+        "rent_auto_cost_uzs": rent_auto_cost_uzs,
     }
-
-
-def _premium_cost(premium_rows) -> tuple[int, list[str]]:
-    """
-    Расход по Premium: у каждого тарифа своя закупочная цена, она лежит
-    в data/prices.json рядом с ценой продажи (поле cost_uzs).
-
-    Сопоставляем по названию тарифа. Заказ хранит item_name вида
-    "Premium — 3 месяца", а в прайсе лежит просто "3 месяца", поэтому
-    ищем вхождение. Тарифы, для которых закупка не указана, возвращаем
-    отдельным списком — чтобы отчёт не делал вид, что посчитал всё.
-    -> (сумма расхода, [названия непосчитанных тарифов])
-    """
-    try:
-        from services.prices import get_premium_packages
-        packages = get_premium_packages()
-    except Exception:
-        return 0, []
-
-    total = 0
-    unknown: list[str] = []
-    for item_name, count in premium_rows:
-        name = item_name or ""
-        match = next((p for p in packages if p.get("label") and p["label"] in name), None)
-        cost = (match or {}).get("cost_uzs")
-        if cost:
-            total += int(cost) * count
-        else:
-            unknown.append(name)
-    return total, unknown
 
 
 async def save_support_mapping(admin_id: int, admin_message_id: int, user_id: int):
@@ -591,8 +460,6 @@ async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
     if since_sql:
         where += " AND o.created_at >= ?"
         params.append(since_sql)
-    # Скрытые вручную аккаунты (см. /hidetop) в публичный рейтинг не попадают
-    where += " AND o.user_id NOT IN (SELECT user_id FROM leaderboard_hidden)"
     params.append(limit)
 
     async with aiosqlite.connect(config.DB_PATH) as db:
@@ -757,62 +624,5 @@ async def get_ton_payments(limit: int = 10) -> list[dict]:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT * FROM ton_payments ORDER BY id DESC LIMIT ?", (limit,)
-        ) as cur:
-            return [dict(r) for r in await cur.fetchall()]
-
-
-# ---- Управление публичным рейтингом (см. /hidetop, /showtop) ----
-
-async def hide_from_leaderboard(user_id: int, reason: str | None = None):
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        await db.execute(
-            """INSERT INTO leaderboard_hidden (user_id, reason) VALUES (?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason""",
-            (user_id, reason),
-        )
-        await db.commit()
-
-
-async def unhide_from_leaderboard(user_id: int) -> bool:
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        cur = await db.execute("DELETE FROM leaderboard_hidden WHERE user_id = ?", (user_id,))
-        await db.commit()
-        return cur.rowcount > 0
-
-
-async def get_hidden_from_leaderboard() -> list[dict]:
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT h.user_id, h.reason, u.username, u.full_name
-               FROM leaderboard_hidden h
-               LEFT JOIN users u ON u.user_id = h.user_id
-               ORDER BY h.created_at DESC"""
-        ) as cur:
-            return [dict(r) for r in await cur.fetchall()]
-
-
-async def find_users_by_name(query: str) -> list[dict]:
-    """
-    Поиск клиента по @username, имени или числовому id — чтобы админу не
-    приходилось выяснять user_id вручную. Возвращает несколько совпадений:
-    имена в Telegram не уникальны, и выбрать нужного должен человек.
-    """
-    q = query.strip().lstrip("@")
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        if q.isdigit():
-            async with db.execute(
-                "SELECT user_id, username, full_name FROM users WHERE user_id = ?", (int(q),)
-            ) as cur:
-                rows = [dict(r) for r in await cur.fetchall()]
-                if rows:
-                    return rows
-        like = f"%{q}%"
-        async with db.execute(
-            """SELECT user_id, username, full_name FROM users
-               WHERE username LIKE ? COLLATE NOCASE OR full_name LIKE ? COLLATE NOCASE
-               LIMIT 10""",
-            (like, like),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
