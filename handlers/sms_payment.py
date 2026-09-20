@@ -30,24 +30,107 @@ import re
 
 from aiogram import Router, F, Bot
 from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 import config
-from database.db import get_order_by_expected_amount, get_cart_orders
+from database.db import (
+    get_order_by_expected_amount, get_cart_orders, find_orders_by_base_price,
+    find_expired_order_by_amount, get_order, set_order_status, set_cart_status,
+)
 from handlers.admin import finalize_payment, finalize_cart_payment
 
 router = Router()
 
+
+async def _suggest_round_payment(bot: Bot, amount: int, candidates: list[dict]) -> None:
+    """
+    Пришла круглая цена вместо точной суммы — показываем админу подходящие
+    заказы и даём подтвердить одним нажатием.
+
+    Автоматически подтверждать НЕЛЬЗЯ: смысл уникальной надбавки как раз в
+    том, чтобы по сумме однозначно понять, чей платёж. Круглая цена этого не
+    даёт — два человека могут ждать оплаты одного и того же пакета звёзд.
+    Поэтому решение остаётся за человеком, бот лишь экономит ему поиск.
+    """
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from services.prices import format_uzs
+
+    lines = [
+        f"💰 <b>Пришло {format_uzs(amount)} — это круглая цена, а не точная сумма.</b>\n",
+        "Клиент перевёл цену товара, не добавив надбавку, поэтому "
+        "автоподтверждение не сработало.\n",
+    ]
+
+    # Кнопка подтверждения появляется ТОЛЬКО когда подходящий заказ один.
+    #
+    # Если ожидающих заказов с такой ценой несколько, кнопки становятся
+    # ловушкой: подписи у них одинаковые, отличается лишь номер, и промахнуться
+    # в спешке — значит выполнить чужой заказ, а заплатившего оставить ни с чем.
+    # В таком случае показываем список без кнопок: пусть решение принимается
+    # по чеку в истории заказов, а не тычком по похожим строкам.
+    markup = None
+    if len(candidates) == 1:
+        o = candidates[0]
+        who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
+        lines.append(
+            f"Подходит один заказ — <b>#{o['id']}</b>\n"
+            f"{o['item_name']} · от {who} · получатель {o['recipient']}\n"
+            f"Ждал: {format_uzs(o.get('expected_amount_uzs') or o['price_uzs'])}"
+        )
+        b = InlineKeyboardBuilder()
+        b.button(text=f"✅ Подтвердить заказ #{o['id']}", callback_data=f"admin:approve:{o['id']}")
+        b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
+        b.adjust(1)
+        markup = b.as_markup()
+    else:
+        lines.append(
+            f"⚠️ С такой ценой ждут оплаты <b>{len(candidates)} заказа</b> — "
+            "по сумме их не различить, поэтому кнопок не даю:"
+        )
+        for o in candidates:
+            who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
+            lines.append(f"  • <b>#{o['id']}</b> — {o['item_name']} · от {who}")
+        lines.append(
+            "\nСверь чек с историей заказов и подтверди нужный командой "
+            "или кнопкой под самим чеком клиента."
+        )
+
+    print(
+        f"[SMS] поступление {amount} похоже на круглую оплату, кандидатов: {len(candidates)}",
+        flush=True,
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, "\n".join(lines), reply_markup=markup)
+        except Exception:
+            pass
+
 # Как банки пишут валюту. БАГ БЫЛ ЗДЕСЬ: латинского "sum" в списке не было,
 # хотя именно так пишет большинство узбекских банков ("Summa: 182 067 sum") —
 # такие уведомления не распознавались вообще.
-_CURRENCY = r"(?:so'?m|so‘m|som|sum|сум|сўм|uzs)"
+# Апострофы в "so'm" бывают четырёх видов: обычный ('), ‘, ’ (автозамена на
+# телефоне) и ʻ (правильная узбекская буква). Пропустить любой из них — значит
+# не распознать сумму вообще.
+_CURRENCY = r"(?:so[\u0027\u2018\u2019\u02bb]?m|som|sum|сум|сўм|сум|uzs)"
 
-_AMOUNT_RE = re.compile(r"([\d][\d\s.,]*\d|\d)\s*" + _CURRENCY, re.IGNORECASE)
+# (?![\w'‘]) — чтобы "sum" не срабатывало на слове "Summa".
+# БАГ БЫЛ ЗДЕСЬ: в однострочной SMS "8600****2726 Summa: 182 067 sum" бот
+# читал "2726 Summa" как «2726 сум» и брал суммой последние 4 цифры карты —
+# такая оплата не совпадала ни с одним заказом.
+_AMOUNT_RE = re.compile(
+    r"([\d][\d\s.,]*\d|\d)\s*" + _CURRENCY + r"(?![\w'‘])", re.IGNORECASE
+)
 
 # Значки прихода/расхода. У банковских уведомлений в Telegram знак несёт
 # смысл надёжнее слов: зелёный кружок и плюс — деньги пришли, красный и
 # минус — ушли. Поэтому знак проверяется РАНЬШЕ ключевых слов.
+# Слова про ОСТАТОК на карте. Это не сумма операции, и принимать её за платёж
+# нельзя: у части банков остаток стоит в тексте раньше самой суммы.
+BALANCE_WORDS = (
+    "ostatok", "balans", "dostupno", "остаток", "баланс", "доступно",
+    "qoldiq", "balance", "available", "💵",
+)
+
 INCOME_MARKS = ("🟢", "✅", "➕")
 OUTGOING_MARKS = ("🔴", "🔻", "➖", "❌")
 
@@ -90,7 +173,14 @@ def _parse_amount(text: str) -> int | None:
     """
     lines = [ln for ln in text.splitlines() if ln.strip()]
     candidates = [ln for ln in lines if any(m in ln for m in INCOME_MARKS) or "+" in ln]
-    for line in candidates + [text]:
+
+    # Запасной путь (в тексте нет строки со знаком прихода): берём первую сумму,
+    # но СНАЧАЛА выкидываем строки про остаток на карте. У части банков остаток
+    # идёт выше суммы операции — и без этой чистки бот сравнивал с заказами
+    # баланс карты вместо платежа.
+    rest = [ln for ln in lines if not any(w in ln.lower() for w in BALANCE_WORDS)]
+
+    for line in candidates + rest + [text]:
         match = _AMOUNT_RE.search(line)
         if match:
             raw = match.group(1).strip()
@@ -192,6 +282,26 @@ async def handle_sms_relay(message: Message, bot: Bot):
 
     order = await get_order_by_expected_amount(amount)
     if not order:
+        # Уникальная сумма не совпала. Прежде чем сдаваться — проверяем самый
+        # частый случай: клиент перевёл КРУГЛУЮ цену (11 000 вместо 11 137),
+        # не обратив внимания на просьбу отправить точную сумму. Деньги
+        # пришли, заказ ждёт, а бот раньше просто писал «не совпала».
+        candidates = await find_orders_by_base_price(amount)
+        if candidates:
+            await _suggest_round_payment(bot, amount, candidates)
+            return
+
+        # Клиент заплатил ПОЗЖЕ, чем мы ждали: заказ уже отменился по таймауту,
+        # а деньги пришли. Раньше бот в этом месте просто молчал — и человек
+        # оставался без товара и без денег, пока сам не напишет. Теперь такое
+        # поступление всегда показываем админу, даже если обычные оповещения
+        # о непонятных суммах выключены: это не «непонятная сумма», это
+        # конкретный заказ конкретного клиента.
+        expired = await find_expired_order_by_amount(amount)
+        if expired:
+            await _alert_late_payment(bot, amount, expired)
+            return
+
         # Сумма не совпала ни с одним ожидающим заказом — либо это поступление
         # не через бота, либо регулярка выше не подходит под формат банка.
         # Пишем админу ТОЛЬКО если он сам включил эти оповещения.
@@ -225,3 +335,69 @@ async def handle_sms_relay(message: Message, bot: Bot):
             )
         except Exception:
             pass
+
+
+async def _alert_late_payment(bot: Bot, amount: int, order: dict) -> None:
+    """Деньги пришли по заказу, который уже отменился по таймауту."""
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from services.prices import format_uzs
+
+    who = order.get("username") and f"@{order['username']}" or f"id {order['user_id']}"
+    cart_id = order.get("cart_id")
+    what = f"корзина {cart_id}" if cart_id else f"заказ #{order['id']}"
+
+    b = InlineKeyboardBuilder()
+    b.button(text=f"✅ Всё равно выполнить ({what})", callback_data=f"sms:revive:{order['id']}")
+    b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
+    b.adjust(1)
+
+    print(f"[SMS] поздняя оплата {amount} по отменённому заказу #{order['id']}", flush=True)
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"⌛💰 <b>Пришло {format_uzs(amount)} по УЖЕ ОТМЕНЁННОМУ заказу</b>\n\n"
+                f"{what.capitalize()} — {order['item_name']}\n"
+                f"От: {who} · получатель: {order['recipient']}\n"
+                f"Отменён по таймауту, но сумма совпала точно.\n\n"
+                "Скорее всего клиент просто заплатил позже. Нажми «Всё равно "
+                "выполнить» — заказ вернётся в работу и выполнится как обычный.",
+                reply_markup=b.as_markup(),
+            )
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("sms:revive:"))
+async def revive_late_order(call: CallbackQuery, bot: Bot):
+    """Вернуть в работу заказ, отменённый по таймауту, — деньги по нему пришли."""
+    if call.from_user.id not in config.ADMIN_IDS:
+        await call.answer("Только для админа", show_alert=True)
+        return
+
+    order_id = int(call.data.split(":")[2])
+    order = await get_order(order_id)
+    if not order:
+        await call.answer("Заказ не найден", show_alert=True)
+        return
+    if order["status"] != "rejected":
+        await call.answer(f"Заказ #{order_id} уже в работе — ничего не делаю", show_alert=True)
+        return
+
+    cart_id = order.get("cart_id")
+    if cart_id:
+        await set_cart_status(cart_id, "payment_review", "Поздняя оплата по SMS")
+        cart_orders = await get_cart_orders(cart_id)
+        await finalize_cart_payment(bot, cart_id, cart_orders)
+        label = f"корзина {cart_id}"
+    else:
+        await set_order_status(order_id, "payment_review", "Поздняя оплата по SMS")
+        order = await get_order(order_id)
+        await finalize_payment(bot, order_id, order)
+        label = f"заказ #{order_id}"
+
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await call.answer(f"{label.capitalize()} вернулся в работу")

@@ -8,6 +8,7 @@ import config
 from database.db import (
     attach_payment_proof, get_order, set_order_status,
     attach_cart_payment_proof, get_cart_orders, set_cart_status,
+    find_order_by_receipt, set_receipt_fingerprint, set_cart_receipt_fingerprint,
 )
 from handlers.states import OrderStates
 from keyboards.admin_kb import admin_review_kb, admin_review_cart_kb
@@ -91,6 +92,78 @@ async def cancel_at_payment_step(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 
+DUPLICATE_RECEIPT = {
+    "uz": (
+        "⚠️ Bu chek allaqachon boshqa buyurtma uchun yuborilgan.\n\n"
+        "Har bir buyurtma alohida to'lanadi. Yangi to'lov qiling va "
+        "ayni shu to'lovning chekini yuboring."
+    ),
+    "ru": (
+        "⚠️ Этот чек уже присылали по другому заказу.\n\n"
+        "Каждый заказ оплачивается отдельно. Сделайте новый перевод и "
+        "пришлите чек именно этого платежа."
+    ),
+    "en": (
+        "⚠️ This receipt was already submitted for another order.\n\n"
+        "Each order is paid separately. Make a new transfer and send "
+        "the receipt for that payment."
+    ),
+}
+
+
+# Живые задачи-напоминалки: см. комментарий у create_task ниже.
+_REMINDER_TASKS: set = set()
+
+
+def _expected_line(order: dict | None) -> str:
+    """
+    Строка «ждём ровно N сум» в карточке чека для админа.
+
+    Это главная защита от повторного чека: у каждого заказа своя сумма
+    с точностью до сума, и если на скриншоте другая цифра — платёж не по
+    этому заказу, каким бы правдоподобным чек ни выглядел.
+    """
+    if not order:
+        return ""
+    expected = order.get("expected_amount_uzs")
+    if not expected:
+        return ""
+    return f"\n\n💳 <b>Ждём ровно: {format_uzs(expected)}</b> — сверь с суммой на чеке"
+
+
+async def _reject_duplicate_receipt(bot: Bot, message: Message, lang, duplicate: dict,
+                                    target, sender: str) -> None:
+    """
+    Чек уже использовали. Клиенту — отказ, админу — короткое уведомление.
+
+    Заказ НЕ переводим в проверку: иначе он попадёт в общий поток чеков, и
+    админ будет разбирать одно и то же по десять раз — ровно то, от чего
+    защищаемся. Заказ остаётся ждать настоящей оплаты.
+    """
+    await message.answer(DUPLICATE_RECEIPT.get(lang if lang in DUPLICATE_RECEIPT else "uz"))
+
+    who_before = duplicate.get("username") and f"@{duplicate['username']}" or f"id {duplicate['user_id']}"
+    status_ru = {
+        "awaiting_payment": "ждёт оплаты", "payment_review": "на проверке",
+        "paid": "оплачен", "fulfilling": "выполняется",
+        "completed": "выполнен", "rejected": "отменён",
+    }.get(duplicate["status"], duplicate["status"])
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🔁 <b>Повторный чек — заблокирован</b>\n\n"
+                f"{sender} прислал чек, который уже использовали.\n\n"
+                f"Сейчас прикладывал к: <b>{target}</b>\n"
+                f"Тот же чек был по заказу <b>#{duplicate['id']}</b> "
+                f"({duplicate['item_name']}, {who_before}) — {status_ru}.\n\n"
+                "Клиенту сказано оплатить заказ отдельно. Тебе делать ничего не нужно.",
+            )
+        except Exception:
+            pass
+
+
 @router.message(OrderStates.waiting_payment_proof, F.photo | F.document)
 async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
@@ -103,13 +176,29 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
         return
 
     file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+    # Отпечаток файла: при пересылке file_id меняется, а file_unique_id — нет.
+    # Именно по нему ловим один и тот же чек, приложенный к разным заказам.
+    fingerprint = (
+        message.photo[-1].file_unique_id if message.photo else message.document.file_unique_id
+    )
     lang = await get_user_language(message.from_user.id)
     sender = f"@{message.from_user.username or message.from_user.id} (id: {message.from_user.id})"
+
+    duplicate = await find_order_by_receipt(
+        fingerprint, exclude_order_id=order_id, exclude_cart_id=cart_id
+    )
+    if duplicate:
+        await _reject_duplicate_receipt(
+            bot, message, lang, duplicate, order_id or cart_id, sender
+        )
+        await state.clear()
+        return
 
     if cart_id:
         # Один чек на всю корзину: помечаем все её товары и отправляем админу
         # ОДНО сообщение с общей суммой и одной парой кнопок.
         await attach_cart_payment_proof(cart_id, file_id)
+        await set_cart_receipt_fingerprint(cart_id, fingerprint)
         cart_orders = await get_cart_orders(cart_id)
         total = sum(o["price_uzs"] for o in cart_orders)
         items = "\n".join(f"  • {o['item_name']} → {o['recipient']}" for o in cart_orders)
@@ -118,11 +207,13 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
             f"От: {sender}\n"
             f"{items}\n"
             f"Итого: {format_uzs(total)}"
+            + _expected_line(cart_orders[0] if cart_orders else None)
         )
         markup = admin_review_cart_kb(cart_id)
         remind_id = cart_orders[0]["id"] if cart_orders else None
     else:
         await attach_payment_proof(order_id, file_id)
+        await set_receipt_fingerprint(order_id, fingerprint)
         order = await get_order(order_id)
         caption = (
             f"🆕 <b>Новый чек по заказу #{order_id}</b>\n"
@@ -130,6 +221,7 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
             f"Товар: {order['item_name'] if order else '—'}\n"
             f"Получатель: {order['recipient'] if order else '—'}\n"
             f"Сумма: {format_uzs(order['price_uzs']) if order else '—'}"
+            + _expected_line(order)
         )
         markup = admin_review_kb(order_id)
         remind_id = order_id
@@ -147,7 +239,12 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
             pass
 
     if remind_id:
-        asyncio.create_task(_remind_admin_if_still_pending(bot, remind_id, cart_id))
+        # Ссылку на задачу держим сами: asyncio хранит на свои задачи только
+        # слабую ссылку, и без этого напоминание может быть собрано сборщиком
+        # мусора посреди ожидания — админ просто не получит пинок по чеку.
+        task = asyncio.create_task(_remind_admin_if_still_pending(bot, remind_id, cart_id))
+        _REMINDER_TASKS.add(task)
+        task.add_done_callback(_REMINDER_TASKS.discard)
 
 
 @router.message(OrderStates.waiting_payment_proof, F.text == "/start")

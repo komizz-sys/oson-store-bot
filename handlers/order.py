@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database.db import create_order, allocate_unique_amount, set_expected_amount
-from services.order_processing import create_order_from_draft
+from services.order_processing import create_order_from_draft, too_many_pending
 from handlers.states import OrderStates
 from keyboards.user_kb import stars_kb, premium_kb, confirm_order_kb, payment_methods_kb
 from services.prices import get_stars_packages, get_premium_packages, format_uzs
@@ -241,6 +241,14 @@ async def cancel_order(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "order:confirm", OrderStates.confirming)
 async def confirm_order(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
+    # Столько же незакрытых заказов на человека, сколько разрешает витрина.
+    # Раньше проверка стояла только в мини-аппе, и через чат можно было
+    # наделать сколько угодно висящих заявок в обход неё.
+    if await too_many_pending(call.from_user.id):
+        lang = await get_user_language(call.from_user.id)
+        await call.answer(t(lang, "too_many_pending"), show_alert=True)
+        return
 
     # Создание заказа и выдача суммы к оплате — общая функция с путём
     # "оформление прямо в витрине", чтобы логика не разъехалась на две копии.

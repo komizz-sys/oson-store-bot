@@ -71,6 +71,11 @@ TRANSLATIONS = {
             "⚠️ Bitta buyurtmada {min_stars} dan {max_stars} tagacha yulduz "
             "sotib olish mumkin. Miqdorni o'zgartirib, qayta urinib ko'ring."
         ),
+        "too_many_pending": (
+            "⚠️ Sizda to'lanmagan buyurtmalar juda ko'p.\n\n"
+            "Avval shularni to'lang yoki bekor qiling — keyin yangisini "
+            "rasmiylashtirasiz."
+        ),
         "proof_received": (
             "✅ Chek qabul qilindi! Buyurtmangiz admin tomonidan tekshirilmoqda.\n\n"
             "⏳ <b>Sizning buyurtmangiz bajarilyabdi, iltimos kutib turing</b> — "
@@ -181,6 +186,10 @@ TRANSLATIONS = {
             "⚠️ За один заказ можно купить от {min_stars} до {max_stars} звёзд. "
             "Измените количество и попробуйте снова."
         ),
+        "too_many_pending": (
+            "⚠️ У вас слишком много неоплаченных заказов.\n\n"
+            "Оплатите или отмените их — после этого можно оформить новый."
+        ),
         "proof_received": (
             "✅ Чек получен! Заказ отправлен на проверку админу.\n\n"
             "⏳ <b>Ваш заказ выполняется, пожалуйста подождите</b> — "
@@ -290,6 +299,10 @@ TRANSLATIONS = {
         "stars_limit_error": (
             "⚠️ You can buy between {min_stars} and {max_stars} stars per order. "
             "Change the amount and try again."
+        ),
+        "too_many_pending": (
+            "⚠️ You have too many unpaid orders.\n\n"
+            "Pay or cancel them first, then you can place a new one."
         ),
         "proof_received": (
             "✅ Receipt received! Your order was sent to the admin for review.\n\n"

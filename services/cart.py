@@ -24,7 +24,7 @@ from aiogram import Bot
 from aiogram.fsm.context import FSMContext
 
 from database.db import (
-    create_order, allocate_unique_amount, set_expected_amount, get_user_language,
+    create_order, allocate_and_set_expected_amount, get_user_language,
     upsert_user,
 )
 from handlers.states import OrderStates
@@ -286,8 +286,14 @@ async def create_cart_orders(rows: list[dict], user_id: int, username: str | Non
     # так автоподтверждение по SMS находит корзину по одной сумме поступления.
     pay_amount = total
     if config.UNIQUE_AMOUNT_ENABLED:
-        pay_amount = await allocate_unique_amount(total, config.UNIQUE_AMOUNT_MAX_OFFSET)
-    for order_id in order_ids:
-        await set_expected_amount(order_id, pay_amount)
+        # Вся корзина получает одну сумму, и закрепляется она за всеми строками
+        # сразу — одной транзакцией, чтобы параллельный заказ не забрал ту же.
+        pay_amount = await allocate_and_set_expected_amount(
+            order_ids, total, config.UNIQUE_AMOUNT_MAX_OFFSET
+        )
+    else:
+        from database.db import set_expected_amount
+        for order_id in order_ids:
+            await set_expected_amount(order_id, pay_amount)
 
     return {"cart_id": cart_id, "order_ids": order_ids, "total": total, "pay_amount": pay_amount}

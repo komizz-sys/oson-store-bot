@@ -18,19 +18,19 @@ def language_select_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def webapp_reply_kb(lang: str | None = None) -> ReplyKeyboardMarkup | None:
-    """
-    Кнопка клавиатуры чата, открывающая мини-апп — ЕДИНСТВЕННЫЙ способ,
-    которым Telegram позволяет мини-аппу отправить sendData() обратно в чат.
-    Через inline-кнопку или Menu Button это технически не работает —
-    приложение просто закрывается, ничего не передав боту.
-    """
-    if not config.WEBAPP_URL:
-        return None
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=t(lang, "menu_webapp"), web_app=WebAppInfo(url=config.WEBAPP_URL))]],
-        resize_keyboard=True,
-    )
+# УБРАНО: кнопка магазина на клавиатуре чата (ReplyKeyboardMarkup).
+#
+# Она открывала витрину по СТАРОМУ пути — через sendData(): витрина закрывалась,
+# бот присылал в чат «Buyurtmani tekshiring… Подтвердить / Отмена», и покупку
+# приходилось подтверждать заново уже в переписке. Кнопок «открыть магазин»
+# было две (эта и в самом меню /start), они вели себя по-разному, и человек
+# не понимал, почему заказ то оформляется сразу, то спрашивает ещё раз.
+#
+# Осталась одна кнопка — в меню /start (main_menu_kb): она открывает витрину
+# как обычный мини-апп, и заказ уходит на сервер напрямую.
+#
+# Старую клавиатуру нужно ещё и СНЯТЬ с телефонов тех, у кого она уже
+# показана — этим занимается drop_reply_kb() в handlers/user.py.
 
 
 def subscribe_gate_kb(lang: str | None = None) -> InlineKeyboardMarkup:

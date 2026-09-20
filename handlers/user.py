@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery
 
 from database.db import upsert_user, get_user_orders, get_user_language, set_user_language
-from keyboards.user_kb import main_menu_kb, language_select_kb, webapp_reply_kb, subscribe_gate_kb
+from keyboards.user_kb import main_menu_kb, language_select_kb, subscribe_gate_kb
 from services.prices import format_uzs
 from services.i18n import t
 from services.subscription import is_subscribed
@@ -47,6 +47,24 @@ def _welcome_text(lang: str, user) -> str:
     return t(lang, "welcome").format(name=mention)
 
 
+async def drop_reply_kb(message) -> None:
+    """
+    Снять с телефона старую кнопку магазина на клавиатуре чата.
+
+    Просто перестать её присылать мало: у тех, кто уже пользовался ботом,
+    она останется висеть навсегда и будет открывать витрину по старому пути.
+    Убрать её можно только сообщением с ReplyKeyboardRemove — поэтому шлём
+    техническое сообщение и сразу удаляем, чтобы не мусорить в чате.
+    """
+    from aiogram.types import ReplyKeyboardRemove
+
+    try:
+        tmp = await message.answer("⌨️", reply_markup=ReplyKeyboardRemove())
+        await tmp.delete()
+    except Exception:
+        pass  # не смогли — не страшно, меню выше всё равно открывает магазин
+
+
 async def _show_main_menu(message_or_call_message, user_id: int, user=None):
     lang = await get_user_language(user_id)
     if not lang:
@@ -57,9 +75,7 @@ async def _show_main_menu(message_or_call_message, user_id: int, user=None):
         return
     text = _welcome_text(lang, user) if user else t(lang, "welcome").format(name="do'stim")
     await _answer_welcome(message_or_call_message, text, main_menu_kb(lang))
-    kb = webapp_reply_kb(lang)
-    if kb:
-        await message_or_call_message.answer(t(lang, "menu_webapp"), reply_markup=kb)
+    await drop_reply_kb(message_or_call_message)
 
 
 @router.message(CommandStart())
@@ -105,9 +121,7 @@ async def set_language(call: CallbackQuery):
 
     await call.message.edit_text(t(lang, "language_changed"))
     await _answer_welcome(call.message, _welcome_text(lang, call.from_user), main_menu_kb(lang))
-    kb = webapp_reply_kb(lang)
-    if kb:
-        await call.message.answer(t(lang, "menu_webapp"), reply_markup=kb)
+    await drop_reply_kb(call.message)
     await call.answer()
 
 

@@ -111,14 +111,40 @@ async def attempt_connect(bot: Bot, order: dict, link: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-async def _announce_success(bot: Bot, order: dict, attempt_note: str = "") -> None:
+async def _complete_order(bot: Bot, order: dict) -> None:
+    """
+    Закрыть заказ аренды как выполненный.
+
+    Для аренды подключение гифта — это и есть выполнение заказа, больше
+    делать нечего. Раньше статус всё равно оставался «оплачен» до тех пор,
+    пока админ не нажмёт «Заказ выполнен», и клиент в витрине бесконечно
+    видел крутящуюся шестерёнку «выполняется» — при том, что подарок уже
+    лежал у него в профиле, а админу бот писал «вручную ничего не нужно».
+    """
+    from database.db import set_order_status
+    from services.live_feed import push_live_feed_event
+    from services.public_channel import post_completed_order
+
+    await set_order_status(order["id"], "completed")
+    try:
+        await post_completed_order(bot, dict(order, status="completed"))
+    except Exception:
+        pass  # витрина и канал не должны мешать закрытию заказа
+    try:
+        await push_live_feed_event("🖼", order["item_name"])
+    except Exception:
+        pass
+
+
+async def announce_success(bot: Bot, order: dict, attempt_note: str = "") -> None:
     lang = _lang_fallback(await get_user_language(order["user_id"]))
     await _notify_client(bot, order["user_id"], SUCCESS[lang].format(item=order["item_name"]))
+    await _complete_order(bot, order)
     await _notify_admins(
         bot,
         f"✅ Заказ #{order['id']} ({order['item_name']}) — аренда подключена "
-        f"АВТОМАТИЧЕСКИ клиенту {order['recipient']}{attempt_note}. "
-        "Вручную ничего делать не нужно.",
+        f"клиенту {order['recipient']}{attempt_note}.\n"
+        "Заказ закрыт как выполненный, вручную ничего делать не нужно.",
     )
 
 
@@ -146,7 +172,7 @@ async def _retry_loop(bot: Bot, order_id: int, link: str) -> None:
 
         ok, err = await attempt_connect(bot, order, link)
         if ok:
-            await _announce_success(bot, order, " (со второй попытки, после оплаты в кошельке)")
+            await announce_success(bot, order, " автоматически, со второй попытки (после оплаты в кошельке)")
             return
 
     # Попытки кончились. Теперь уже честно зовём на помощь — и клиента, и админа.
@@ -188,7 +214,7 @@ async def connect_rent_link(bot: Bot, order: dict, link: str, *, announce_start:
 
     ok, err = await attempt_connect(bot, order, link)
     if ok:
-        await _announce_success(bot, order)
+        await announce_success(bot, order, " автоматически")
         return True
 
     # Не получилось — почти наверняка админ ещё не подтвердил перевод.

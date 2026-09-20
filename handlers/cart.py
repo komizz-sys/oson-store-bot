@@ -16,6 +16,7 @@ from database.db import get_user_language
 from handlers.states import OrderStates
 from keyboards.user_kb import payment_methods_kb
 from services.cart import create_cart_orders, summary_text
+from services.order_processing import too_many_pending
 from services.i18n import t
 from services.prices import format_uzs
 
@@ -39,8 +40,14 @@ async def confirm_cart(call: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    created = await create_cart_orders(rows, call.from_user.id, call.from_user.username)
     lang = await get_user_language(call.from_user.id)
+
+    # Тот же лимит висящих заказов, что и в витрине — см. order_processing.
+    if await too_many_pending(call.from_user.id):
+        await call.answer(t(lang, "too_many_pending"), show_alert=True)
+        return
+
+    created = await create_cart_orders(rows, call.from_user.id, call.from_user.username)
 
     # Дальше — обычный шаг оплаты: тот же state и тот же обработчик чека, что и
     # у одиночного заказа, просто в данных лежит ещё и cart_id.

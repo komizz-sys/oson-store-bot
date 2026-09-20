@@ -26,6 +26,28 @@ class OrderError(Exception):
     """Ошибка валидации заказа — пользователю уже отправлено сообщение с текстом."""
 
 
+# Сколько незакрытых заказов клиент может держать одновременно. Смысл не в
+# недоверии, а в том, что десять висящих заявок от одного человека — это
+# всегда либо случайные повторы, либо попытка завалить админа. Оплатил или
+# отменил предыдущие — оформляй сколько угодно новых.
+MAX_PENDING_ORDERS_PER_USER = 3
+
+
+async def too_many_pending(user_id: int) -> bool:
+    """
+    Лимит висящих заказов — ОДИН на все входы: и витрина, и чат.
+
+    Раньше проверка жила только в API мини-аппа, и тот же человек спокойно
+    набивал заявки через чат. Число держим здесь, чтобы два пути не разъехались.
+    """
+    from database.db import count_pending_orders
+
+    try:
+        return await count_pending_orders(user_id) >= MAX_PENDING_ORDERS_PER_USER
+    except Exception:
+        return False  # сбой базы не должен закрывать магазин
+
+
 def _as_int_or_zero(value) -> int:
     """Количество из мини-аппа приходит как есть — строкой, None или мусором."""
     try:
@@ -55,7 +77,7 @@ async def create_order_from_draft(bot: Bot, user_id: int, username: str | None, 
     -> {"order_id": int, "price": int, "pay_amount": int}
     """
     import config
-    from database.db import create_order, allocate_unique_amount, set_expected_amount
+    from database.db import create_order, allocate_and_set_expected_amount
 
     order_id = await create_order(
         user_id=user_id,
@@ -77,8 +99,11 @@ async def create_order_from_draft(bot: Bot, user_id: int, username: str | None, 
     # только сумме поступления понять, чей это платёж (автопроверка по SMS).
     pay_amount = data["price"]
     if config.UNIQUE_AMOUNT_ENABLED:
-        pay_amount = await allocate_unique_amount(data["price"], config.UNIQUE_AMOUNT_MAX_OFFSET)
-        await set_expected_amount(order_id, pay_amount)
+        # Выдача и закрепление суммы — одной транзакцией, иначе два
+        # одновременных заказа могут получить одинаковую сумму к оплате.
+        pay_amount = await allocate_and_set_expected_amount(
+            order_id, data["price"], config.UNIQUE_AMOUNT_MAX_OFFSET
+        )
 
     return {"order_id": order_id, "price": data["price"], "pay_amount": pay_amount}
 

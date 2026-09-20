@@ -13,6 +13,11 @@ from handlers import user, admin, order, payment, webapp, support, rent_link, sm
 
 logging.basicConfig(level=logging.INFO)
 
+# Ссылки на фоновые задачи держим сами: asyncio хранит на свои задачи только
+# слабую ссылку, и без этого сборщик мусора может тихо убить напоминания о
+# Premium или чистку просроченных заказов посреди работы.
+_BACKGROUND_TASKS: list = []
+
 
 async def _expire_stale_orders_loop(bot: Bot):
     """
@@ -58,6 +63,14 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher(storage=MemoryStorage())
+
+    # Бан — ДО всех роутеров: забаненный клиент не доходит ни до заказов,
+    # ни до чеков, ни до поддержки. Админов не трогает.
+    from middlewares.ban import BanMiddleware
+    # Именно outer: срабатывает ДО фильтров, один раз на событие — забаненный
+    # не доходит вообще ни до одного хендлера, и лишних проверок нет.
+    dp.message.outer_middleware(BanMiddleware())
+    dp.callback_query.outer_middleware(BanMiddleware())
 
     # Порядок важен: сначала специфичные роутеры, потом общие
     dp.include_router(sms_payment.router)
@@ -107,10 +120,12 @@ async def main():
     # Напоминания о продлении Premium (раз в 6 часов проверяет подписки,
     # которым скоро месяц, и шлёт "заканчивается завтра")
     from services.premium_reminder import premium_reminder_loop
-    asyncio.create_task(premium_reminder_loop(bot))
+    _BACKGROUND_TASKS.append(asyncio.create_task(premium_reminder_loop(bot)))
 
-    if config.UNIQUE_AMOUNT_ENABLED:
-        asyncio.create_task(_expire_stale_orders_loop(bot))
+    # Чистка просроченных заказов нужна ВСЕГДА, а не только при уникальных
+    # суммах: именно она снимает с клиента "висящие" заявки, из-за которых он
+    # упирается в лимит незакрытых заказов и не может купить снова.
+    _BACKGROUND_TASKS.append(asyncio.create_task(_expire_stale_orders_loop(bot)))
 
     await dp.start_polling(bot)
 

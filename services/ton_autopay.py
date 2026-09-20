@@ -71,10 +71,20 @@ async def autopay_or_none(bot: Bot, tx: dict, order: dict, purpose: str, what: s
     try:
         result = await pay_transaction(tx, order_id=order_id, purpose=purpose)
     except TonPayError as e:
+        # Нехватка денег — самый частый и самый безобидный случай: ничего не
+        # списалось, заказ не заблокирован, после пополнения следующие
+        # оплатятся сами. Поэтому и значок другой, и текст без паники.
+        low = "не хватает TON" in str(e)
+        head = "🪫" if low else "⚠️"
         await _notify_admins(
             bot,
-            f"⚠️ Заказ #{order_id} ({what}) — автооплата не прошла:\n{e}\n\n"
-            f"Сумма была бы {amount_ton:.4f} TON. Ниже — ссылка для ручной оплаты.",
+            f"{head} Заказ #{order_id} ({what}) — автооплата не прошла:\n{e}\n\n"
+            + (
+                "Магазин работает как обычно: оплати этот заказ по ссылке ниже, "
+                "а после пополнения кошелька следующие пойдут автоматически."
+                if low
+                else f"Сумма была бы {amount_ton:.4f} TON. Ниже — ссылка для ручной оплаты."
+            ),
         )
         return False
     except Exception as e:
@@ -87,10 +97,24 @@ async def autopay_or_none(bot: Bot, tx: dict, order: dict, purpose: str, what: s
         return False
 
     tx_note = f"\nХеш: <code>{result['tx_hash']}</code>" if result.get("tx_hash") else ""
+    left = result.get("balance_left_ton")
+    left_note = f"\nОстаток: {left:.4f} TON" if isinstance(left, (int, float)) else ""
+
     await _notify_admins(
         bot,
         f"🤖💸 Заказ #{order_id} ({what}) — оплачено АВТОМАТИЧЕСКИ с кошелька магазина.\n"
-        f"Списано: {result['amount_ton']:.4f} TON{tx_note}\n\n"
+        f"Списано: {result['amount_ton']:.4f} TON{left_note}{tx_note}\n\n"
         "Вручную подтверждать в кошельке ничего не нужно.",
     )
+
+    # Предупреждаем ЗАРАНЕЕ, пока деньги ещё есть. Отдельным сообщением —
+    # чтобы не потерялось в хвосте обычного уведомления об оплате.
+    if result.get("low_balance"):
+        await _notify_admins(
+            bot,
+            f"🪫 <b>Кошелёк магазина заканчивается: {left:.4f} TON</b>\n\n"
+            "Пополни его, пока заказы идут. Когда TON закончится, магазин НЕ "
+            "встанет — бот пришлёт ссылку на ручную оплату, — но каждую "
+            "покупку придётся подтверждать в кошельке самому.",
+        )
     return True
