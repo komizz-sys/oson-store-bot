@@ -385,13 +385,23 @@ async def handle_sms_relay(message: Message, bot: Bot):
                     pass
             return
 
-        # Недоплата: человек округлил сумму вниз (ждали 11 207 — прислал
-        # 11 000 или 11 100). Деньги реально пришли, заказ есть — молчать тут
-        # нельзя, иначе клиент сидит и ждёт, а админ ничего не знает.
-        candidates = await find_underpaid_orders(amount, config.SMS_UNDERPAY_MAX_GAP_UZS)
+        # ПОРЯДОК ЗДЕСЬ ВАЖЕН.
+        #
+        # Сначала — ТОЧНОЕ совпадение с ценой товара. У позиций без надбавки
+        # (Premium на 1 месяц) сумма к оплате равна цене, и такой платёж
+        # принадлежит именно этому заказу. Раньше этот случай проверялся
+        # последним, и перевод на 49 000 сначала попадал в «недоплату» по
+        # ЧУЖОМУ старому заказу, который ждал 49 219 — бот писал о доплате
+        # не тому человеку.
+        #
+        # И только потом — догадка про округление вниз (ждали 11 207,
+        # прислали 11 000). Она нестрогая, поэтому идёт после точной.
+        window = config.SMS_MATCH_WINDOW_HOURS
+        candidates = await find_orders_by_base_price(amount, within_hours=window)
         if not candidates:
-            # Запасной путь для заказов без уникальной суммы вообще.
-            candidates = await find_orders_by_base_price(amount)
+            candidates = await find_underpaid_orders(
+                amount, config.SMS_UNDERPAY_MAX_GAP_UZS, within_hours=window
+            )
         if candidates:
             await _handle_underpayment(bot, amount, candidates)
             return

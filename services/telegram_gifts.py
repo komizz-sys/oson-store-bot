@@ -124,16 +124,29 @@ async def fulfill_simple_gift(bot, order: dict) -> tuple[bool, str]:
     if not user_id and order.get("username") and username.lower() == f"@{order['username']}".lower():
         user_id = order.get("user_id")
 
-    # 3) В остальных случаях (подарок другу) пробуем разрешить по @username —
-    #    сработает, только если получатель уже писал этому боту.
+    # 3) Подарок другу: ищем его id в НАШЕЙ базе. Если человек хоть раз
+    #    нажимал /start, он там есть — а раньше мы туда не заглядывали и
+    #    отказывали в выполнении заказа людям, которые бота давно запустили.
+    if not user_id:
+        from database.db import find_user_id_by_username
+
+        try:
+            user_id = await find_user_id_by_username(username)
+        except Exception:
+            user_id = None
+
+    # 4) Последняя попытка — спросить у Telegram. Для обычных пользователей
+    #    это срабатывает редко, поэтому и стоит последним.
     if not user_id:
         user_id = await resolve_user_id(bot, username)
 
     if user_id is None:
         return False, (
-            f"Не удалось определить user_id получателя {username} — "
-            "он ещё не писал этому боту. Попроси клиента отправить /start "
-            "этому же боту, затем выполни заказ вручную (или повтори)."
+            f"Не удалось определить user_id получателя {username}.\n\n"
+            "Telegram не позволяет боту узнать id по одному @username — "
+            "получатель должен хотя бы раз сам написать этому боту.\n\n"
+            "Попроси клиента, чтобы получатель отправил боту /start, "
+            "потом нажми «Повторить» или выполни заказ вручную."
         )
 
     quantity = order.get("quantity") or 1

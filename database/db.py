@@ -973,7 +973,7 @@ async def find_users_by_name(query: str) -> list[dict]:
             return [dict(r) for r in await cur.fetchall()]
 
 
-async def find_orders_by_base_price(amount: int) -> list[dict]:
+async def find_orders_by_base_price(amount: int, within_hours: int = 24) -> list[dict]:
     """
     Неоплаченные заказы, у которых ЦЕНА равна этой сумме.
 
@@ -992,7 +992,9 @@ async def find_orders_by_base_price(amount: int) -> list[dict]:
         status_placeholders = ",".join("?" for _ in UNPAID_STATUSES)
         async with db.execute(
             f"""SELECT * FROM orders WHERE status IN ({status_placeholders})
-                AND price_uzs = ? ORDER BY id DESC LIMIT 5""",
+                AND price_uzs = ?
+                AND created_at >= datetime('now', '-{int(within_hours)} hours')
+                ORDER BY id DESC LIMIT 5""",
             (*UNPAID_STATUSES, amount),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
@@ -1012,7 +1014,7 @@ async def find_orders_by_base_price(amount: int) -> list[dict]:
     return unique
 
 
-async def find_underpaid_orders(amount: int, max_gap: int) -> list[dict]:
+async def find_underpaid_orders(amount: int, max_gap: int, within_hours: int = 24) -> list[dict]:
     """
     Заказы, которым этого поступления НЕ ХВАТИЛО совсем чуть-чуть.
 
@@ -1039,9 +1041,10 @@ async def find_underpaid_orders(amount: int, max_gap: int) -> list[dict]:
                   AND expected_amount_uzs IS NOT NULL
                   AND expected_amount_uzs > ?
                   AND expected_amount_uzs - ? <= ?
-                ORDER BY expected_amount_uzs - ? ASC, id DESC
-                LIMIT 5""",
-            (*UNPAID_STATUSES, amount, amount, max_gap, amount),
+                  AND created_at >= datetime('now', '-{hours} hours')
+                ORDER BY id DESC
+                LIMIT 5""".format(hours=int(within_hours)),
+            (*UNPAID_STATUSES, amount, amount, max_gap),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
 
@@ -1184,6 +1187,47 @@ async def add_admin_card_note(order_id: int, note: str) -> list[dict]:
             out.append({"chat_id": r["chat_id"], "message_id": r["message_id"]})
         await db.commit()
     return out
+
+
+async def find_user_id_by_username(username: str) -> int | None:
+    """
+    Найти user_id получателя по @username — в НАШЕЙ базе.
+
+    Telegram не даёт боту превратить @username в user_id: метода для этого
+    в Bot API просто нет, а get_chat() для обычных пользователей срабатывает
+    далеко не всегда. Зато если человек хоть раз нажимал /start, его id у нас
+    уже есть — раньше мы туда не заглядывали и отказывали в выполнении заказа
+    людям, которые бота давно запустили.
+
+    Регистр не важен: клиент пишет «@Bunny_00P», а в базе лежит «bunny_00p».
+    """
+    uname = (username or "").strip().lstrip("@").lower()
+    if not uname:
+        return None
+
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # 1) Наши пользователи — самый надёжный источник.
+        async with db.execute(
+            "SELECT user_id FROM users WHERE LOWER(username) = ? ORDER BY user_id DESC LIMIT 1",
+            (uname,),
+        ) as cur:
+            row = await cur.fetchone()
+            if row:
+                return int(row[0])
+
+        # 2) Получатели прошлых заказов, у которых id уже был известен
+        #    (например, человек получал подарок «себе» со своего же аккаунта).
+        async with db.execute(
+            """SELECT recipient_user_id FROM orders
+               WHERE recipient_user_id IS NOT NULL
+                 AND LOWER(REPLACE(recipient, '@', '')) = ?
+               ORDER BY id DESC LIMIT 1""",
+            (uname,),
+        ) as cur:
+            row = await cur.fetchone()
+            if row and row[0]:
+                return int(row[0])
+    return None
 
 
 # ---- Доплата по недоплаченному заказу ----

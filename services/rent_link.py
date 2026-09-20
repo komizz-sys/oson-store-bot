@@ -17,22 +17,25 @@ from database.db import get_user_language
 RENT_LINK_PROMPT = {
     "uz": (
         "🎥 <b>Ijaraga olgan sovg'angizni qanday olish mumkin:</b>\n\n"
-        "Yuqoridagi videoni ko'ring — unda Telegram'da sovg'ani ulash uchun "
-        "shaxsiy havolangizni qanday olish ko'rsatilgan.\n\n"
+        "Yuqoridagi videoni ko'ring — unda hamma narsa ko'rsatilgan.\n\n"
+        "🔗 <b>Havola <u>fragment.com</u> saytidan olinadi</b> — o'sha yerga "
+        "Telegram orqali kiring va shaxsiy havolangizni oling.\n\n"
         "So'ngra <b>do'konni oching</b> va havolani yuqoridagi \"Aktiv buyurtma\" "
         "bo'limidagi maydonga joylang — sovg'a avtomatik ulanadi ✅"
     ),
     "ru": (
         "🎥 <b>Как получить арендованный подарок:</b>\n\n"
-        "Посмотрите видео выше — там показано, как получить свою персональную "
-        "ссылку для подключения подарка в Telegram.\n\n"
+        "Посмотрите видео выше — там показано всё по шагам.\n\n"
+        "🔗 <b>Ссылка берётся на сайте <u>fragment.com</u></b> — зайдите туда "
+        "через Telegram и получите свою персональную ссылку.\n\n"
         "Затем <b>откройте магазин</b> и вставьте ссылку в поле в блоке "
         "«Активный заказ» — подарок подключится автоматически ✅"
     ),
     "en": (
         "🎥 <b>How to get your rented gift:</b>\n\n"
-        "Watch the video above — it shows how to get your personal link to "
-        "connect the gift in Telegram.\n\n"
+        "Watch the video above — it shows every step.\n\n"
+        "🔗 <b>The link comes from <u>fragment.com</u></b> — sign in there with "
+        "Telegram and get your personal link.\n\n"
         "Then <b>open the shop</b> and paste the link into the field in the "
         "\"Active order\" block — the gift will be connected automatically ✅"
     ),
