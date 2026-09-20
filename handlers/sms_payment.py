@@ -36,74 +36,149 @@ import config
 from database.db import (
     get_order_by_expected_amount, get_cart_orders, find_orders_by_base_price,
     find_expired_order_by_amount, get_order, set_order_status, set_cart_status,
+    find_underpaid_orders, get_user_language,
+    remember_topup, find_topup_order, clear_topup,
 )
 from handlers.admin import finalize_payment, finalize_cart_payment
+from services.i18n import t
 
 router = Router()
 
 
-async def _suggest_round_payment(bot: Bot, amount: int, candidates: list[dict]) -> None:
+async def _handle_underpayment(bot: Bot, amount: int, candidates: list[dict]) -> None:
     """
-    Пришла круглая цена вместо точной суммы — показываем админу подходящие
-    заказы и даём подтвердить одним нажатием.
+    Денег пришло МЕНЬШЕ, чем ждали по заказу.
 
-    Автоматически подтверждать НЕЛЬЗЯ: смысл уникальной надбавки как раз в
-    том, чтобы по сумме однозначно понять, чей платёж. Круглая цена этого не
-    даёт — два человека могут ждать оплаты одного и того же пакета звёзд.
-    Поэтому решение остаётся за человеком, бот лишь экономит ему поиск.
+    Почти всегда это не обман, а привычка округлять: заказу выдана сумма
+    11 207, человек отправил 11 000. Деньги на карте, заказ висит, и раньше
+    об этом никто не узнавал — ни клиент, ни админ.
+
+    Что делаем:
+    - клиенту пишем, сколько именно осталось доплатить (только если кандидат
+      ОДИН — иначе непонятно, кому писать);
+    - админу показываем карточку с кнопкой «принять как есть»: недостача
+      обычно копеечная, и гонять человека за второй перевод на 107 сум —
+      верный способ потерять клиента. Решение остаётся за живым человеком.
+
+    Автоматически такой платёж не подтверждаем НИКОГДА: смысл уникальной
+    надбавки в том, что она точно указывает на заказ. Неточная сумма этой
+    гарантии не даёт.
     """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from services.prices import format_uzs
 
-    lines = [
-        f"💰 <b>Пришло {format_uzs(amount)} — это круглая цена, а не точная сумма.</b>\n",
-        "Клиент перевёл цену товара, не добавив надбавку, поэтому "
-        "автоподтверждение не сработало.\n",
-    ]
-
-    # Кнопка подтверждения появляется ТОЛЬКО когда подходящий заказ один.
-    #
-    # Если ожидающих заказов с такой ценой несколько, кнопки становятся
-    # ловушкой: подписи у них одинаковые, отличается лишь номер, и промахнуться
-    # в спешке — значит выполнить чужой заказ, а заплатившего оставить ни с чем.
-    # В таком случае показываем список без кнопок: пусть решение принимается
-    # по чеку в истории заказов, а не тычком по похожим строкам.
-    markup = None
-    if len(candidates) == 1:
-        o = candidates[0]
-        who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
-        lines.append(
-            f"Подходит один заказ — <b>#{o['id']}</b>\n"
-            f"{o['item_name']} · от {who} · получатель {o['recipient']}\n"
-            f"Ждал: {format_uzs(o.get('expected_amount_uzs') or o['price_uzs'])}"
-        )
-        b = InlineKeyboardBuilder()
-        b.button(text=f"✅ Подтвердить заказ #{o['id']}", callback_data=f"admin:approve:{o['id']}")
-        b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
-        b.adjust(1)
-        markup = b.as_markup()
-    else:
-        lines.append(
-            f"⚠️ С такой ценой ждут оплаты <b>{len(candidates)} заказа</b> — "
-            "по сумме их не различить, поэтому кнопок не даю:"
-        )
-        for o in candidates:
-            who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
-            lines.append(f"  • <b>#{o['id']}</b> — {o['item_name']} · от {who}")
-        lines.append(
-            "\nСверь чек с историей заказов и подтверди нужный командой "
-            "или кнопкой под самим чеком клиента."
-        )
-
     print(
-        f"[SMS] поступление {amount} похоже на круглую оплату, кандидатов: {len(candidates)}",
+        f"[SMS] поступление {amount} меньше ожидаемого, кандидатов: {len(candidates)}",
         flush=True,
     )
-    for admin_id in config.ADMIN_IDS:
+
+    # Кандидатов несколько — кнопок НЕ даём и клиенту НЕ пишем.
+    #
+    # Подписи у кнопок были бы почти одинаковые, отличался бы только номер, и
+    # промах в спешке означает: выполнить чужой заказ, а заплатившего оставить
+    # ни с чем. Пусть админ сверит с чеком в истории.
+    if len(candidates) > 1:
+        lines = [
+            f"💰 <b>Пришло {format_uzs(amount)} — меньше, чем ждём.</b>\n",
+            f"⚠️ Под эту сумму подходит <b>{len(candidates)} заказа</b> — "
+            "по сумме их не различить, поэтому кнопок не даю:",
+        ]
+        for o in candidates:
+            who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
+            expected = o.get("expected_amount_uzs") or o["price_uzs"]
+            short = max(0, expected - amount)
+            lines.append(
+                f"  • <b>#{o['id']}</b> — {o['item_name']} · от {who} · "
+                f"не хватает {format_uzs(short)}"
+            )
+        lines.append("\nСверь чек в истории заказов и подтверди нужный кнопкой под чеком клиента.")
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, "\n".join(lines))
+            except Exception:
+                pass
+        return
+
+    order = candidates[0]
+    expected = order.get("expected_amount_uzs") or order["price_uzs"]
+    short = max(0, expected - amount)
+    cart_id = order.get("cart_id")
+    who = order.get("username") and f"@{order['username']}" or f"id {order['user_id']}"
+    what = f"корзина {cart_id}" if cart_id else f"заказ #{order['id']}"
+
+    # Ровно цена, надбавки у заказа нет (например Premium на 1 месяц — его
+    # владелец покупает руками). Это НЕ недоплата, и пугать клиента нечем.
+    if short <= 0:
+        b = InlineKeyboardBuilder()
+        if cart_id:
+            b.button(text=f"✅ Подтвердить ({what})", callback_data=f"admin:approve_cart:{cart_id}")
+        else:
+            b.button(text=f"✅ Подтвердить (#{order['id']})", callback_data=f"admin:approve:{order['id']}")
+        b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
+        b.adjust(1)
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"💰 <b>Пришло {format_uzs(amount)} — подходит под {what}</b>\n\n"
+                    f"{order['item_name']} · от {who} · получатель {order['recipient']}\n\n"
+                    "Сумма ровная (без надбавки), поэтому автоматически не подтверждаю — "
+                    "сверь с чеком и нажми кнопку.",
+                    reply_markup=b.as_markup(),
+                )
+            except Exception:
+                pass
+        return
+
+    # --- Клиенту: сколько доплатить ---
+    if short > 0:
+        # Запоминаем ожидаемую доплату: без этого отдельный перевод на 207 сум
+        # пришёл бы в никуда, а мы уже пообещали, что заказ продолжится сам.
         try:
-            await bot.send_message(admin_id, "\n".join(lines), reply_markup=markup)
+            await remember_topup(order["id"], short)
         except Exception:
             pass
+        lang = await get_user_language(order["user_id"]) or "uz"
+        if lang not in ("uz", "ru", "en"):
+            lang = "uz"
+        try:
+            await bot.send_message(
+                order["user_id"],
+                t(lang, "underpay_notice").format(
+                    paid=format_uzs(amount),
+                    short=format_uzs(short),
+                    total=format_uzs(expected),
+                    card=config.PAYMENT_CARD_NUMBER,
+                ),
+            )
+        except Exception:
+            pass  # клиент мог закрыть чат — админ всё равно всё увидит
+
+    # --- Админу: карточка с решением ---
+    b = InlineKeyboardBuilder()
+    if cart_id:
+        b.button(text=f"✅ Принять как есть ({what})", callback_data=f"admin:approve_cart:{cart_id}")
+    else:
+        b.button(text=f"✅ Принять как есть (#{order['id']})", callback_data=f"admin:approve:{order['id']}")
+    b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
+    b.adjust(1)
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"💰 <b>Недоплата по {what}</b>\n\n"
+                f"Пришло: <b>{format_uzs(amount)}</b>\n"
+                f"Ждём: <b>{format_uzs(expected)}</b>\n"
+                f"Не хватает: <b>{format_uzs(short)}</b>\n\n"
+                f"{order['item_name']} · от {who} · получатель {order['recipient']}\n\n"
+                "Клиенту уже написал, сколько доплатить. Если недостача копеечная — "
+                "жми «Принять как есть», заказ выполнится как обычно.",
+                reply_markup=b.as_markup(),
+            )
+        except Exception:
+            pass
+
 
 # Как банки пишут валюту. БАГ БЫЛ ЗДЕСЬ: латинского "sum" в списке не было,
 # хотя именно так пишет большинство узбекских банков ("Summa: 182 067 sum") —
@@ -286,9 +361,39 @@ async def handle_sms_relay(message: Message, bot: Bot):
         # частый случай: клиент перевёл КРУГЛУЮ цену (11 000 вместо 11 137),
         # не обратив внимания на просьбу отправить точную сумму. Деньги
         # пришли, заказ ждёт, а бот раньше просто писал «не совпала».
-        candidates = await find_orders_by_base_price(amount)
+        # Это ДОПЛАТА по заказу, которому в прошлый раз не хватило? Маленький
+        # отдельный перевод (207 сум) не совпадает ни с ценой, ни с суммой
+        # заказа — узнать его можно только по тому, что мы сами эту доплату
+        # и попросили.
+        topup = await find_topup_order(amount)
+        if topup:
+            await clear_topup(topup["id"])
+            if topup.get("cart_id"):
+                cart_orders = await get_cart_orders(topup["cart_id"])
+                await finalize_cart_payment(bot, topup["cart_id"], cart_orders)
+                label = f"корзина {topup['cart_id']}"
+            else:
+                await finalize_payment(bot, topup["id"], topup)
+                label = f"Заказ #{topup['id']} ({topup['item_name']})"
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        admin_id,
+                        f"🤖✅ {label} подтверждён: клиент доплатил недостающие {amount} сум.",
+                    )
+                except Exception:
+                    pass
+            return
+
+        # Недоплата: человек округлил сумму вниз (ждали 11 207 — прислал
+        # 11 000 или 11 100). Деньги реально пришли, заказ есть — молчать тут
+        # нельзя, иначе клиент сидит и ждёт, а админ ничего не знает.
+        candidates = await find_underpaid_orders(amount, config.SMS_UNDERPAY_MAX_GAP_UZS)
+        if not candidates:
+            # Запасной путь для заказов без уникальной суммы вообще.
+            candidates = await find_orders_by_base_price(amount)
         if candidates:
-            await _suggest_round_payment(bot, amount, candidates)
+            await _handle_underpayment(bot, amount, candidates)
             return
 
         # Клиент заплатил ПОЗЖЕ, чем мы ждали: заказ уже отменился по таймауту,

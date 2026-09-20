@@ -16,9 +16,9 @@ import re
 
 from aiogram import Router, F, Bot
 from aiogram.dispatcher.event.bases import SkipHandler
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
-from database.db import get_pending_rent_link_order, set_rent_link
+from database.db import get_pending_rent_link_order, set_rent_link, get_user_language
 from services.rent_connect import connect_rent_link
 
 router = Router()
@@ -50,3 +50,35 @@ async def receive_rent_link(message: Message, bot: Bot):
     # общем для этого обработчика и для витрины, чтобы клиент получал одни и те
     # же сообщения независимо от того, куда он прислал ссылку.
     await connect_rent_link(bot, order, link)
+
+
+@router.callback_query(F.data == "rent:displayhelp")
+async def send_display_help(call: CallbackQuery, bot: Bot):
+    """
+    Инструкция «как показать подарок в профиле» — видео, если оно записано,
+    иначе тот же текст сообщением.
+
+    Включить показ за клиента бот не может: подарок лежит на его аккаунте
+    Fragment, и это действие внутри его аккаунта. Единственное, что в наших
+    силах — объяснить максимально коротко и показать пальцем.
+    """
+    import config
+    from services.rent_connect import DISPLAY_HELP, _lang_fallback
+
+    lang = _lang_fallback(await get_user_language(call.from_user.id))
+    caption = DISPLAY_HELP[lang]
+
+    try:
+        if config.RENT_DISPLAY_VIDEO:
+            await bot.send_video(call.from_user.id, config.RENT_DISPLAY_VIDEO, caption=caption)
+        else:
+            await bot.send_message(call.from_user.id, caption)
+        await call.answer()
+    except Exception:
+        # file_id протух или переменная заполнена не тем — текст всё равно
+        # должен дойти, иначе кнопка просто молчит.
+        try:
+            await bot.send_message(call.from_user.id, caption)
+            await call.answer()
+        except Exception:
+            await call.answer("Xatolik / Ошибка", show_alert=True)

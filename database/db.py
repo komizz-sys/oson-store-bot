@@ -83,6 +83,35 @@ CREATE TABLE IF NOT EXISTS ton_payments (
 # Нужно для своих тестовых аккаунтов и для случаев, когда заказ был реальным,
 # но светить клиента в топе не хочется. Сам заказ при этом остаётся в базе и в
 # статистике — скрывается только строка в рейтинге.
+# Карточки чеков, отправленные админу. Нужны, чтобы бот мог САМ дописать в уже
+# отправленное сообщение «оплачено автоматически» и «ВЫПОЛНЕНО»: иначе админ
+# видит в чате только старую карточку с кнопками и не понимает, закрыт заказ
+# или нет — ровно та путаница, из-за которой заказы подтверждались дважды.
+#
+# Храним и исходную подпись: отредактировать сообщение можно только целиком,
+# а прочитать его текст у Telegram нельзя.
+CREATE_ADMIN_CARDS_TABLE = """
+CREATE TABLE IF NOT EXISTS admin_cards (
+    order_id   INTEGER NOT NULL,
+    chat_id    INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    caption    TEXT    NOT NULL DEFAULT '',
+    notes      TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (order_id, chat_id)
+)
+"""
+
+# Ожидаемые доплаты: заказ #N недоплачен на X сум. Сумма — ключ: именно по ней
+# бот узнаёт отдельный маленький перевод и понимает, к какому заказу его
+# приложить. Без этой таблицы доплата пришла бы в никуда.
+CREATE_PENDING_TOPUPS_TABLE = """
+CREATE TABLE IF NOT EXISTS pending_topups (
+    amount     INTEGER PRIMARY KEY,
+    order_id   INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
 CREATE_BANNED_TABLE = """
 CREATE TABLE IF NOT EXISTS banned_users (
     user_id INTEGER PRIMARY KEY,
@@ -118,6 +147,8 @@ async def init_db():
         await db.execute(CREATE_TON_PAYMENTS_TABLE)
         await db.execute(CREATE_LEADERBOARD_HIDDEN_TABLE)
         await db.execute(CREATE_BANNED_TABLE)
+        await db.execute(CREATE_ADMIN_CARDS_TABLE)
+        await db.execute(CREATE_PENDING_TOPUPS_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
@@ -132,6 +163,12 @@ async def init_db():
             "ALTER TABLE orders ADD COLUMN is_extension INTEGER DEFAULT 0",
             "ALTER TABLE orders ADD COLUMN parent_order_id INTEGER",
             "ALTER TABLE orders ADD COLUMN receipt_fingerprint TEXT",
+            # Ссылка вида https://t.me/nft/swisswatch-12345 — «паспорт» именно
+            # этого экземпляра подарка. Нужна, чтобы после подключения дать
+            # клиенту кнопку прямо на его подарок: Telegram показывает
+            # арендованный гифт в профиле только когда владелец сам включит
+            # показ, а найти гифт без ссылки человек не может.
+            "ALTER TABLE orders ADD COLUMN nft_preview_url TEXT",
             "CREATE INDEX IF NOT EXISTS idx_orders_receipt ON orders(receipt_fingerprint)",
         ):
             try:
@@ -958,7 +995,68 @@ async def find_orders_by_base_price(amount: int) -> list[dict]:
                 AND price_uzs = ? ORDER BY id DESC LIMIT 5""",
             (*UNPAID_STATUSES, amount),
         ) as cur:
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    # Корзина — несколько строк с одной суммой: показываем её как ОДНУ позицию,
+    # иначе пять товаров выглядят как пять разных кандидатов, и админ остаётся
+    # без кнопки подтверждения на совершенно обычном платеже.
+    seen_carts = set()
+    unique = []
+    for r in rows:
+        cart_id = r.get("cart_id")
+        if cart_id:
+            if cart_id in seen_carts:
+                continue
+            seen_carts.add(cart_id)
+        unique.append(r)
+    return unique
+
+
+async def find_underpaid_orders(amount: int, max_gap: int) -> list[dict]:
+    """
+    Заказы, которым этого поступления НЕ ХВАТИЛО совсем чуть-чуть.
+
+    Живой случай: заказу выдана сумма 11 207, а человек перевёл 11 000 или
+    11 100 — округлил, как привык. Деньги реально пришли, заказ висит, а
+    автоподтверждение молчит, потому что сумма не совпала до сума.
+
+    Ищем неоплаченные заказы, где ожидаемая сумма БОЛЬШЕ пришедшей, но
+    разница не больше max_gap. Так под выборку попадает недоплата на размер
+    надбавки (и круглая цена тоже — она частный случай), но не попадает
+    чужой платёж на совсем другую сумму.
+
+    Возвращаем СПИСОК: если кандидатов несколько, угадать, кто именно
+    заплатил, нельзя — решать будет админ.
+    """
+    if max_gap <= 0:
+        return []
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        status_placeholders = ",".join("?" for _ in UNPAID_STATUSES)
+        async with db.execute(
+            f"""SELECT * FROM orders
+                WHERE status IN ({status_placeholders})
+                  AND expected_amount_uzs IS NOT NULL
+                  AND expected_amount_uzs > ?
+                  AND expected_amount_uzs - ? <= ?
+                ORDER BY expected_amount_uzs - ? ASC, id DESC
+                LIMIT 5""",
+            (*UNPAID_STATUSES, amount, amount, max_gap, amount),
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    # Корзина — это несколько строк заказов с ОДНОЙ суммой. Схлопываем её в
+    # одну позицию, иначе админ увидит пять одинаковых кандидатов вместо одного.
+    seen_carts = set()
+    unique = []
+    for r in rows:
+        cart_id = r.get("cart_id")
+        if cart_id:
+            if cart_id in seen_carts:
+                continue
+            seen_carts.add(cart_id)
+        unique.append(r)
+    return unique
 
 
 # ---- Защита от повторного использования одного чека ----
@@ -1042,6 +1140,94 @@ async def count_pending_orders(user_id: int) -> int:
             (user_id, *UNPAID_STATUSES),
         ) as cur:
             return (await cur.fetchone())[0] or 0
+
+
+# ---- Карточки чеков у админа ----
+
+async def remember_admin_card(order_ids, chat_id: int, message_id: int, caption: str):
+    """Запомнить, каким сообщением показана карточка чека — чтобы потом его дополнить."""
+    ids = [order_ids] if isinstance(order_ids, int) else list(order_ids)
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        for order_id in ids:
+            await db.execute(
+                """INSERT INTO admin_cards (order_id, chat_id, message_id, caption, notes)
+                   VALUES (?, ?, ?, ?, '')
+                   ON CONFLICT(order_id, chat_id) DO UPDATE SET
+                     message_id=excluded.message_id, caption=excluded.caption, notes=''""",
+                (order_id, chat_id, message_id, caption[:3000]),
+            )
+        await db.commit()
+
+
+async def add_admin_card_note(order_id: int, note: str) -> list[dict]:
+    """
+    Куда отправить итог по заказу — и не отправляли ли мы его уже.
+
+    Возвращает [{chat_id, message_id}] карточек, которым этот итог ещё не
+    писали. Товары одной корзины закрываются по одному, и без этой проверки
+    «ВЫПОЛНЕНО» прилетело бы столько раз, сколько в корзине товаров.
+    """
+    out = []
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM admin_cards WHERE order_id = ?", (order_id,)
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+        for r in rows:
+            if note in (r["notes"] or ""):
+                continue
+            await db.execute(
+                "UPDATE admin_cards SET notes = ? WHERE order_id = ? AND chat_id = ?",
+                ((r["notes"] or "") + note, order_id, r["chat_id"]),
+            )
+            out.append({"chat_id": r["chat_id"], "message_id": r["message_id"]})
+        await db.commit()
+    return out
+
+
+# ---- Доплата по недоплаченному заказу ----
+
+async def remember_topup(order_id: int, amount: int):
+    """
+    Запомнить, что по заказу ждём ДОПЛАТУ на такую сумму.
+
+    Без этого обещание «доплатите — заказ продолжится сам» было бы ложью:
+    отдельный перевод на 207 сум не совпадает ни с ценой, ни с суммой заказа,
+    и бот просто не понял бы, что это за деньги.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO pending_topups (amount, order_id) VALUES (?, ?)
+               ON CONFLICT(amount) DO UPDATE SET
+                 order_id=excluded.order_id, created_at=CURRENT_TIMESTAMP""",
+            (amount, order_id),
+        )
+        await db.commit()
+
+
+async def find_topup_order(amount: int, hours: int = 24) -> dict | None:
+    """Заказ, которому не хватало ровно этой суммы (и он всё ещё ждёт оплаты)."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        status_placeholders = ",".join("?" for _ in UNPAID_STATUSES)
+        async with db.execute(
+            f"""SELECT o.* FROM pending_topups p
+                JOIN orders o ON o.id = p.order_id
+                WHERE p.amount = ?
+                  AND p.created_at >= datetime('now', '-{int(hours)} hours')
+                  AND o.status IN ({status_placeholders})
+                LIMIT 1""",
+            (amount, *UNPAID_STATUSES),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def clear_topup(order_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("DELETE FROM pending_topups WHERE order_id = ?", (order_id,))
+        await db.commit()
 
 
 # ---- Бан клиентов ----

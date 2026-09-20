@@ -1,6 +1,7 @@
 import re
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from database.db import upsert_user, get_user_orders, get_user_language, set_user_language
@@ -8,6 +9,7 @@ from keyboards.user_kb import main_menu_kb, language_select_kb, subscribe_gate_k
 from services.prices import format_uzs
 from services.i18n import t
 from services.subscription import is_subscribed
+from handlers.states import OrderStates
 
 router = Router()
 
@@ -145,8 +147,27 @@ async def back_to_menu(call: CallbackQuery):
     await call.answer()
 
 
+# Заказы, которые ещё не закрыты: по ним клиенту есть что делать.
+ACTIVE_STATUSES = ("awaiting_payment", "payment_review", "paid", "fulfilling")
+
+
 @router.callback_query(F.data == "menu:my_orders")
-async def my_orders(call: CallbackQuery):
+async def my_orders(call: CallbackQuery, state: FSMContext):
+    """
+    Мои заказы.
+
+    Раньше здесь был просто список строк «#97 — Premium — 49 000 — ждёт оплаты».
+    Для истории этого хватает, а для НЕЗАКРЫТОГО заказа — нет: реквизиты и
+    точная сумма показывались только в витрине, и человек, закрывший мини-апп,
+    оставался без единственных цифр, которые ему нужны. Сам заказ при этом
+    никуда не девался — просто его не было видно.
+
+    Теперь незакрытый заказ показывается первым, с картой и точной суммой, и
+    чек по нему можно прислать прямо сюда, в чат.
+    """
+    import config
+    from keyboards.user_kb import payment_methods_kb
+
     lang = await get_user_language(call.from_user.id)
     orders = await get_user_orders(call.from_user.id)
 
@@ -155,10 +176,35 @@ async def my_orders(call: CallbackQuery):
         await call.answer()
         return
 
+    active = next((o for o in orders if o["status"] in ACTIVE_STATUSES), None)
     lines = [t(lang, "my_orders_header")]
+
     for o in orders:
         status = t(lang, STATUS_KEYS.get(o["status"], "status_awaiting_payment"))
-        lines.append(f"#{o['id']} — {o['item_name']} — {format_uzs(o['price_uzs'])} — {status}")
+        mark = "▶️ " if active and o["id"] == active["id"] else ""
+        lines.append(f"{mark}#{o['id']} — {o['item_name']} — {format_uzs(o['price_uzs'])} — {status}")
 
-    await call.message.edit_text("\n".join(lines), reply_markup=main_menu_kb(lang))
+    markup = main_menu_kb(lang)
+
+    if active and active["status"] == "awaiting_payment":
+        amount = active.get("expected_amount_uzs") or active["price_uzs"]
+        lines.append("")
+        lines.append(t(lang, "my_orders_active_title").format(order_id=active["id"]))
+        lines.append(t(lang, "order_pay_card") + f"<code>{config.PAYMENT_CARD_NUMBER}</code>")
+        lines.append(f"{t(lang, 'order_pay_receiver')}: {config.PAYMENT_CARD_HOLDER}")
+        lines.append("")
+        lines.append(t(lang, "my_orders_exact").format(amount=format_uzs(amount)))
+        lines.append(t(lang, "my_orders_send_here"))
+
+        # Ставим то же состояние, что и после оформления: чек, присланный
+        # сюда сообщением, прикрепится именно к этому заказу. Без этого после
+        # перезапуска бота состояние терялось и чек уходил в пустоту.
+        await state.update_data(
+            order_id=active["id"],
+            cart_id=active.get("cart_id"),
+        )
+        await state.set_state(OrderStates.waiting_payment_proof)
+        markup = payment_methods_kb()
+
+    await call.message.edit_text("\n".join(lines), reply_markup=markup)
     await call.answer()

@@ -33,6 +33,33 @@ class OrderError(Exception):
 MAX_PENDING_ORDERS_PER_USER = 3
 
 
+def wants_exact_price(category: str, item_name: str) -> bool:
+    """
+    Этому товару надбавку к сумме НЕ даём — платят ровно цену.
+
+    Нужно для позиций, которые владелец закупает вручную (Premium на 1 месяц):
+    автоподтверждение по SMS для них всё равно не используется, а «странная»
+    сумма 49 206 вместо ровных 49 000 только путает покупателя.
+
+    Помечается флагом "exact_price": true у тарифа в data/prices.json —
+    чтобы поменять решение можно было в прайсе, не трогая код.
+    """
+    if category != "premium":
+        return False
+    from services.prices import get_premium_packages
+
+    try:
+        for pkg in get_premium_packages():
+            if not pkg.get("exact_price"):
+                continue
+            label = str(pkg.get("label") or "")
+            if label and label in (item_name or ""):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def too_many_pending(user_id: int) -> bool:
     """
     Лимит висящих заказов — ОДИН на все входы: и витрина, и чат.
@@ -91,6 +118,7 @@ async def create_order_from_draft(bot: Bot, user_id: int, username: str | None, 
         rent_days=data.get("rent_days"),
         nft_address=data.get("nft_address"),
         base_price_per_day_gram=str(data.get("base_price_per_day_gram", "")) or None,
+        nft_preview_url=data.get("nft_preview_url"),
         is_extension=int(data.get("is_extension") or 0),
         parent_order_id=data.get("parent_order_id"),
     )
@@ -98,7 +126,9 @@ async def create_order_from_draft(bot: Bot, user_id: int, username: str | None, 
     # Уникальная сумма (цена + небольшая случайная надбавка) — чтобы по одной
     # только сумме поступления понять, чей это платёж (автопроверка по SMS).
     pay_amount = data["price"]
-    if config.UNIQUE_AMOUNT_ENABLED:
+    if config.UNIQUE_AMOUNT_ENABLED and not wants_exact_price(
+        data["category"], data.get("item_name") or ""
+    ):
         # Выдача и закрепление суммы — одной транзакцией, иначе два
         # одновременных заказа могут получить одинаковую сумму к оплате.
         pay_amount = await allocate_and_set_expected_amount(
@@ -358,6 +388,11 @@ async def process_order(
             category="nft_rent",
             item_name=payload["item_name"],
             nft_address=payload["nft_address"],
+            # Ссылка на конкретный экземпляр подарка (t.me/nft/...). Витрина её
+            # уже знает — она же используется для кнопки «посмотреть подарок».
+            # После подключения отдадим её клиенту, чтобы он одним нажатием
+            # попал на свой гифт и включил показ в профиле.
+            nft_preview_url=(payload.get("preview_url") or "").strip() or None,
             base_price_per_day_gram=base_price_per_day_gram,
             rent_days=days,
             price=calc["total_to_pay"],

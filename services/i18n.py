@@ -28,7 +28,8 @@ TRANSLATIONS = {
             "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Operator</b> — /operator, 24/7 yordam"
             "</blockquote>\n"
             "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> To'lov so'mda 🇺🇿\n\n"
-            "Bo'limni tanlang:"
+            "Bo'limni tanlang:\n\n"
+            "<tg-emoji emoji-id='5231102735817918643'>🛍</tg-emoji> <b>Do'konni ochish uchun bosing</b> \u2b07\ufe0f"
         ),
         "menu_webapp": "🛍 Do'konni ochish",
         "menu_stars": "⭐ Stars sotib olish",
@@ -71,6 +72,19 @@ TRANSLATIONS = {
             "⚠️ Bitta buyurtmada {min_stars} dan {max_stars} tagacha yulduz "
             "sotib olish mumkin. Miqdorni o'zgartirib, qayta urinib ko'ring."
         ),
+        "underpay_notice": (
+            "⚠️ <b>To'lov to'liq emas</b>\n\n"
+            "Keldi: <b>{paid}</b>\n"
+            "Kerak edi: <b>{total}</b>\n"
+            "Yetmayapti: <b>{short}</b>\n\n"
+            "Iltimos, qolgan <b>{short}</b> ni shu kartaga o'tkazing:\n"
+            "<code>{card}</code>\n\n"
+            "Aynan shu summani yuboring — buyurtma o'zi davom etadi.\n"
+            "Boshqa summa yuborsangiz yoki savol bo'lsa — /operator."
+        ),
+        "my_orders_active_title": "💳 <b>#{order_id} — to'lov kutilmoqda</b>",
+        "my_orders_exact": "⚠️ <b>Aynan shu summani o'tkazing: {amount}</b>\n<i>Bir so'm ham kam yoki ko'p emas — aks holda to'lov avtomatik tasdiqlanmaydi.</i>",
+        "my_orders_send_here": "To'lagach, chekni shu yerga rasm qilib yuboring.",
         "too_many_pending": (
             "⚠️ Sizda to'lanmagan buyurtmalar juda ko'p.\n\n"
             "Avval shularni to'lang yoki bekor qiling — keyin yangisini "
@@ -143,7 +157,8 @@ TRANSLATIONS = {
             "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Оператор</b> — /operator, помощь 24/7"
             "</blockquote>\n"
             "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> Оплата в сумах 🇺🇿\n\n"
-            "Выберите раздел:"
+            "Выберите раздел:\n\n"
+            "<tg-emoji emoji-id='5231102735817918643'>🛍</tg-emoji> <b>Нажмите, чтобы открыть магазин</b> \u2b07\ufe0f"
         ),
         "menu_webapp": "🛍 Открыть магазин",
         "menu_stars": "⭐ Купить звёзды",
@@ -186,6 +201,19 @@ TRANSLATIONS = {
             "⚠️ За один заказ можно купить от {min_stars} до {max_stars} звёзд. "
             "Измените количество и попробуйте снова."
         ),
+        "underpay_notice": (
+            "⚠️ <b>Оплата пришла не полностью</b>\n\n"
+            "Пришло: <b>{paid}</b>\n"
+            "Нужно было: <b>{total}</b>\n"
+            "Не хватает: <b>{short}</b>\n\n"
+            "Переведите, пожалуйста, оставшиеся <b>{short}</b> на ту же карту:\n"
+            "<code>{card}</code>\n\n"
+            "Переведите именно эту сумму — заказ продолжится сам.\n"
+            "Если переведёте другую сумму или есть вопросы — /operator."
+        ),
+        "my_orders_active_title": "💳 <b>#{order_id} — ждёт оплаты</b>",
+        "my_orders_exact": "⚠️ <b>Переведите ровно: {amount}</b>\n<i>Ни сумом больше, ни сумом меньше — иначе оплата не подтвердится автоматически.</i>",
+        "my_orders_send_here": "После оплаты пришлите чек картинкой сюда.",
         "too_many_pending": (
             "⚠️ У вас слишком много неоплаченных заказов.\n\n"
             "Оплатите или отмените их — после этого можно оформить новый."
@@ -257,7 +285,8 @@ TRANSLATIONS = {
             "<tg-emoji emoji-id='5375465730621869144'>💬</tg-emoji> <b>Operator</b> — /operator, 24/7 support"
             "</blockquote>\n"
             "<tg-emoji emoji-id='5280946368158933554'>🛍</tg-emoji> Payment in Uzbek som 🇺🇿\n\n"
-            "Choose a section:"
+            "Choose a section:\n\n"
+            "<tg-emoji emoji-id='5231102735817918643'>🛍</tg-emoji> <b>Tap to open the shop</b> \u2b07\ufe0f"
         ),
         "menu_webapp": "🛍 Open shop",
         "menu_stars": "⭐ Buy Stars",
@@ -300,6 +329,19 @@ TRANSLATIONS = {
             "⚠️ You can buy between {min_stars} and {max_stars} stars per order. "
             "Change the amount and try again."
         ),
+        "underpay_notice": (
+            "⚠️ <b>The payment is short</b>\n\n"
+            "Received: <b>{paid}</b>\n"
+            "Expected: <b>{total}</b>\n"
+            "Missing: <b>{short}</b>\n\n"
+            "Please transfer the remaining <b>{short}</b> to the same card:\n"
+            "<code>{card}</code>\n\n"
+            "Send exactly this amount and the order continues on its own.\n"
+            "If you send a different amount or have questions — /operator."
+        ),
+        "my_orders_active_title": "💳 <b>#{order_id} — awaiting payment</b>",
+        "my_orders_exact": "⚠️ <b>Transfer exactly: {amount}</b>\n<i>Not a som more, not a som less — otherwise the payment won't confirm automatically.</i>",
+        "my_orders_send_here": "After paying, send the receipt here as a photo.",
         "too_many_pending": (
             "⚠️ You have too many unpaid orders.\n\n"
             "Pay or cancel them first, then you can place a new one."

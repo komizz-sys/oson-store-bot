@@ -100,11 +100,17 @@ async def autopay_or_none(bot: Bot, tx: dict, order: dict, purpose: str, what: s
     left = result.get("balance_left_ton")
     left_note = f"\nОстаток: {left:.4f} TON" if isinstance(left, (int, float)) else ""
 
-    await _notify_admins(
+    # Отдельного сообщения об УСПЕХЕ админу больше не шлём: при потоке заказов
+    # эти «оплачено автоматически» забивали чат, и на их фоне терялось то
+    # единственное, что требует внимания — НЕудачная автооплата. Результат
+    # дописываем прямо в карточку чека, там же, где админ нажимал кнопку.
+    from handlers.admin import note_on_admin_card
+
+    await note_on_admin_card(
         bot,
-        f"🤖💸 Заказ #{order_id} ({what}) — оплачено АВТОМАТИЧЕСКИ с кошелька магазина.\n"
-        f"Списано: {result['amount_ton']:.4f} TON{left_note}{tx_note}\n\n"
-        "Вручную подтверждать в кошельке ничего не нужно.",
+        order_id,
+        f"🤖💸 Автооплата по #{order_id}: {result['amount_ton']:.4f} TON"
+        + (f" · остаток {left:.4f}" if isinstance(left, (int, float)) else ""),
     )
 
     # Предупреждаем ЗАРАНЕЕ, пока деньги ещё есть. Отдельным сообщением —

@@ -111,6 +111,20 @@ DUPLICATE_RECEIPT = {
 }
 
 
+def _is_repeat_receipt(order: dict | None) -> bool:
+    """
+    Это уже ВТОРОЙ чек по тому же заказу?
+
+    Клиенты часто шлют два скриншота одного платежа: экран «перевод выполнен»
+    и следом PDF-квитанцию из банка. Файлы разные, поэтому защита от повторного
+    чека их не ловит — и админ получал две одинаковые карточки с двумя парами
+    кнопок по одному заказу. Легко нажать «подтвердить» дважды и запутаться.
+    """
+    if not order:
+        return False
+    return bool(order.get("payment_proof_file_id")) and order.get("status") == "payment_review"
+
+
 # Живые задачи-напоминалки: см. комментарий у create_task ниже.
 _REMINDER_TASKS: set = set()
 
@@ -197,6 +211,8 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
     if cart_id:
         # Один чек на всю корзину: помечаем все её товары и отправляем админу
         # ОДНО сообщение с общей суммой и одной парой кнопок.
+        cart_before = await get_cart_orders(cart_id)
+        repeat = _is_repeat_receipt(cart_before[0] if cart_before else None)
         await attach_cart_payment_proof(cart_id, file_id)
         await set_cart_receipt_fingerprint(cart_id, fingerprint)
         cart_orders = await get_cart_orders(cart_id)
@@ -209,9 +225,15 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
             f"Итого: {format_uzs(total)}"
             + _expected_line(cart_orders[0] if cart_orders else None)
         )
-        markup = admin_review_cart_kb(cart_id)
-        remind_id = cart_orders[0]["id"] if cart_orders else None
+        cart_order_ids = [o["id"] for o in cart_orders]
+        markup = None if repeat else admin_review_cart_kb(cart_id)
+        if repeat:
+            caption = f"🔁 <b>Ещё один чек по корзине {cart_id}</b>\n" + caption.split("\n", 1)[1]
+            caption += "\n\n☝️ Кнопки — в первом сообщении по этой корзине."
+        remind_id = None if repeat else (cart_orders[0]["id"] if cart_orders else None)
     else:
+        cart_order_ids = []
+        repeat = _is_repeat_receipt(await get_order(order_id))
         await attach_payment_proof(order_id, file_id)
         await set_receipt_fingerprint(order_id, fingerprint)
         order = await get_order(order_id)
@@ -223,18 +245,35 @@ async def got_payment_proof(message: Message, state: FSMContext, bot: Bot):
             f"Сумма: {format_uzs(order['price_uzs']) if order else '—'}"
             + _expected_line(order)
         )
-        markup = admin_review_kb(order_id)
-        remind_id = order_id
+        markup = None if repeat else admin_review_kb(order_id)
+        if repeat:
+            caption = (
+                f"🔁 <b>Ещё один чек по заказу #{order_id}</b>\n"
+                + caption.split("\n", 1)[1]
+                + "\n\n☝️ Кнопки — в первом сообщении по этому заказу."
+            )
+        # Напоминалку на повторный чек не ставим: по этому заказу она уже идёт.
+        remind_id = None if repeat else order_id
 
     await message.answer(t(lang, "proof_received"))
     await state.clear()
 
+    from database.db import remember_admin_card
+
+    card_ids = cart_order_ids if cart_id else [order_id]
     for admin_id in config.ADMIN_IDS:
         try:
             if message.photo:
-                await bot.send_photo(admin_id, file_id, caption=caption, reply_markup=markup)
+                sent = await bot.send_photo(admin_id, file_id, caption=caption, reply_markup=markup)
             else:
-                await bot.send_document(admin_id, file_id, caption=caption, reply_markup=markup)
+                sent = await bot.send_document(admin_id, file_id, caption=caption, reply_markup=markup)
+            # Запоминаем сообщение, чтобы потом дописать в него «ВЫПОЛНЕНО»
+            # и результат автооплаты — админу не придётся искать это в ленте.
+            if not repeat:
+                try:
+                    await remember_admin_card(card_ids, admin_id, sent.message_id, caption)
+                except Exception:
+                    pass
         except Exception:
             pass
 

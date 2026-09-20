@@ -93,7 +93,8 @@
     {
       "label": "1 месяц",
       "price_uzs": 49000,
-      "cost_uzs": 35990
+      "cost_uzs": 35990,
+      "exact_price": true
     },
     {
       "label": "3 месяца",

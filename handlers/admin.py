@@ -512,6 +512,9 @@ async def _fulfill_order(bot: Bot, order_id: int, order: dict) -> None:
         success, note = await fulfill_simple_gift(bot, order)
         if success:
             await set_order_status(order_id, "completed")
+            await note_on_admin_card(
+                bot, order_id, f"🏁 <b>ВЫПОЛНЕНО</b> — #{order_id} {order['item_name']}"
+            )
             lang = await _get_user_language(order["user_id"])
             await bot.send_message(
                 order["user_id"],
@@ -522,6 +525,41 @@ async def _fulfill_order(bot: Bot, order_id: int, order: dict) -> None:
         for admin_id in config.ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, f"Заказ #{order_id}: {note}")
+            except Exception:
+                pass
+
+
+async def note_on_admin_card(bot: Bot, order_id: int, note: str) -> None:
+    """
+    Написать итог по заказу ОТВЕТОМ на ту карточку чека, где принималось решение.
+
+    Почему ответом, а не правкой самой карточки: Telegram при редактировании
+    сообщения заменяет клавиатуру целиком, и «правка» снесла бы кнопки
+    «Выполнен» у корзины — заказ повис бы без единого способа его закрыть.
+    Ответ даёт то же самое (итог виден там же, где кнопки, одним тапом до
+    исходной карточки), но ничего не ломает.
+
+    Повторы отсекаем по тексту: товары корзины закрываются по одному, и без
+    этого «ВЫПОЛНЕНО» пришло бы пять раз подряд.
+    """
+    from database.db import add_admin_card_note
+
+    try:
+        targets = await add_admin_card_note(order_id, note)
+    except Exception:
+        return
+
+    for tgt in targets:
+        try:
+            await bot.send_message(
+                tgt["chat_id"], note.strip(),
+                reply_to_message_id=tgt["message_id"],
+            )
+        except Exception:
+            # Карточку удалили или она слишком старая для ответа — тогда просто
+            # отдельным сообщением, лишь бы админ увидел.
+            try:
+                await bot.send_message(tgt["chat_id"], note.strip())
             except Exception:
                 pass
 
@@ -1246,6 +1284,9 @@ async def mark_done(call: CallbackQuery, bot: Bot):
         return
 
     await set_order_status(order_id, "completed")
+    await note_on_admin_card(
+        bot, order_id, f"🏁 <b>ВЫПОЛНЕНО</b> — #{order_id} {order['item_name']}"
+    )
     await _append_note(call, "\n\n🎉 Выполнено")
     await call.answer("Отмечено как выполнено")
 

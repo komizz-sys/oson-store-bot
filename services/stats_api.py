@@ -266,6 +266,44 @@ async def handle_send_rent_tutorial(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_send_display_video(request: web.Request) -> web.Response:
+    """
+    Прислать в чат видео «как показать арендованный подарок в профиле».
+
+    Подарок приходит на Fragment, и дальше его нужно вывести на профиль
+    руками — за клиента это не сделает ни бот, ни магазин. Инструкция уходит
+    в чат: там её можно пересмотреть в любой момент, в отличие от экрана
+    витрины, который закрывается вместе с мини-аппом.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    from database.db import get_user_language
+    from services.rent_connect import DISPLAY_HELP
+
+    lang = await get_user_language(user["id"]) or "uz"
+    if lang not in ("uz", "ru", "en"):
+        lang = "uz"
+    caption = DISPLAY_HELP[lang]
+
+    try:
+        if config.RENT_DISPLAY_VIDEO:
+            await _bot.send_video(user["id"], config.RENT_DISPLAY_VIDEO, caption=caption)
+        else:
+            # Видео ещё не записано — текстовой инструкции всё равно достаточно,
+            # чтобы человек не остался один на один с вопросом.
+            await _bot.send_message(user["id"], caption)
+    except Exception:
+        return web.json_response({"ok": False, "error": "send_failed"}, status=502)
+    return web.json_response({"ok": True})
+
+
 async def handle_cancel_order(request: web.Request) -> web.Response:
     """
     Отмена заказа самим клиентом из витрины.
@@ -426,9 +464,15 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
                 pass
         return web.json_response({"error": "duplicate_receipt"}, status=409)
 
+    # Второй скриншот того же платежа (экран банка + PDF-квитанция) — обычное
+    # дело. Карточку админу показываем, но БЕЗ второй пары кнопок: см.
+    # handlers/payment._is_repeat_receipt.
+    from handlers.payment import _is_repeat_receipt
+
     if cart_id:
         # Один чек на всю корзину — одно сообщение админу и одна пара кнопок
         cart_orders = await get_cart_orders(cart_id)
+        repeat = _is_repeat_receipt(cart_orders[0] if cart_orders else None)
         total = sum(o["price_uzs"] for o in cart_orders)
         items = "\n".join(f"  • {o['item_name']} → {o['recipient']}" for o in cart_orders)
         caption = (
@@ -437,8 +481,12 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
             f"Итого: {format_uzs(total)}"
             + _expected_line(cart_orders[0] if cart_orders else None)
         )
-        markup = admin_review_cart_kb(cart_id)
+        markup = None if repeat else admin_review_cart_kb(cart_id)
+        if repeat:
+            caption = f"🔁 <b>Ещё один чек по корзине {cart_id}</b>\n" + caption.split("\n", 1)[1]
+            caption += "\n\n☝️ Кнопки — в первом сообщении по этой корзине."
     else:
+        repeat = _is_repeat_receipt(order)
         caption = (
             f"🆕 <b>Новый чек по заказу #{order['id']}</b> (из мини-аппа)\n"
             f"От: {sender}\n"
@@ -447,7 +495,13 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
             f"Сумма: {format_uzs(order['price_uzs'])}"
             + _expected_line(order)
         )
-        markup = admin_review_kb(order["id"])
+        markup = None if repeat else admin_review_kb(order["id"])
+        if repeat:
+            caption = (
+                f"🔁 <b>Ещё один чек по заказу #{order['id']}</b>\n"
+                + caption.split("\n", 1)[1]
+                + "\n\n☝️ Кнопки — в первом сообщении по этому заказу."
+            )
 
     sent_any = False
     for admin_id in config.ADMIN_IDS:
@@ -467,6 +521,16 @@ async def handle_submit_receipt(request: web.Request) -> web.Response:
                 else:
                     await attach_payment_proof(order["id"], msg.photo[-1].file_id)
                     await set_receipt_fingerprint(order["id"], fingerprint)
+            # Запоминаем сообщение — потом бот сам допишет в него результат
+            # автооплаты и «ВЫПОЛНЕНО», чтобы итог был там же, где кнопки.
+            if not repeat:
+                try:
+                    from database.db import remember_admin_card
+
+                    card_ids = [o["id"] for o in cart_orders] if cart_id else [order["id"]]
+                    await remember_admin_card(card_ids, admin_id, msg.message_id, caption)
+                except Exception:
+                    pass
             sent_any = True
         except Exception as e:
             print(f"[RECEIPT] send failed: order={order_id} admin={admin_id} err={e}", flush=True)
@@ -874,6 +938,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/active_order", handle_active_order)
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
     app.router.add_post("/public/send_rent_tutorial", handle_send_rent_tutorial)
+    app.router.add_post("/public/send_display_video", handle_send_display_video)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",

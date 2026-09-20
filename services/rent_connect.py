@@ -21,6 +21,7 @@
 """
 
 import asyncio
+import html
 
 from aiogram import Bot
 
@@ -49,11 +50,88 @@ CONNECTING = {
     "ru": "⏳ Ссылку получил, подключаю подарок...",
     "en": "⏳ Got your link, connecting the gift...",
 }
+# ВАЖНО про текст ниже.
+#
+# Раньше здесь было написано «откройте профиль — подарок должен отображаться»,
+# и это вводило людей в заблуждение: подарок действительно приходит, но
+# Telegram НЕ показывает его на странице сам по себе. Пока владелец не включит
+# показ, гифт лежит скрытым — снаружи его видно только на Fragment. Это
+# поведение самого Telegram (в их API у подарка есть флаг "скрыт", и он
+# снимается либо вручную, либо настройкой автопоказа в приватности).
+#
+# Включить показ за клиента бот не может физически: это действие внутри его
+# аккаунта, никакой бот в чужие настройки не лезет. Поэтому единственное, что
+# мы можем — написать по шагам, что нажать. Отсюда и такой длинный текст:
+# короткий («проверьте профиль») стоил нам потока вопросов в поддержку.
 SUCCESS = {
-    "uz": "✅ Tayyor! «{item}» sovg'asi profilingizga ulandi.\n\nTelegram profilingizni oching va tekshiring — sovg'a ko'rinishi kerak. Agar darhol ko'rinmasa, Telegram'ni qayta ishga tushiring.",
-    "ru": "✅ Готово! Подарок «{item}» подключён к вашему профилю.\n\nОткройте свой профиль в Telegram и проверьте — подарок должен отображаться. Если не видно сразу, перезапустите Telegram.",
-    "en": "✅ Done! The gift \"{item}\" is connected to your profile.\n\nOpen your Telegram profile to check — the gift should be visible. If not, restart Telegram.",
+    "uz": (
+        "✅ Tayyor! «{item}» sovg'asi hisobingizga o'tkazildi.\n\n"
+        "⚠️ Sovg'a profilda <b>o'zi ko'rinmaydi</b> — uni bir marta ko'rsatish kerak:\n\n"
+        "1️⃣ <b>fragment.com</b> ga Telegram orqali kiring\n"
+        "2️⃣ <b>My assets</b> bo'limini oching — sovg'a o'sha yerda\n"
+        "3️⃣ Sovg'ani tanlab, profilda ko'rsatishni yoqing\n\n"
+        "Pastdagi tugmani bossangiz — to'liq video qo'llanma yuboraman."
+    ),
+    "ru": (
+        "✅ Готово! Подарок «{item}» переведён на ваш аккаунт.\n\n"
+        "⚠️ Сам по себе в профиле он <b>не появится</b> — показ нужно включить один раз:\n\n"
+        "1️⃣ Зайдите на <b>fragment.com</b> через Telegram\n"
+        "2️⃣ Откройте раздел <b>My assets</b> — подарок там\n"
+        "3️⃣ Выберите подарок и включите показ в профиле\n\n"
+        "Нажмите кнопку ниже — пришлю подробное видео."
+    ),
+    "en": (
+        "✅ Done! The gift \"{item}\" has been transferred to your account.\n\n"
+        "⚠️ It will <b>not</b> show up on your profile by itself — you need to turn the display on once:\n\n"
+        "1️⃣ Sign in to <b>fragment.com</b> with Telegram\n"
+        "2️⃣ Open <b>My assets</b> — the gift is there\n"
+        "3️⃣ Select the gift and enable showing it on your profile\n\n"
+        "Tap the button below and I'll send a full video guide."
+    ),
 }
+
+# Та же инструкция, но как подпись к видео — её шлёт и кнопка в витрине
+# (/public/send_display_video), и кнопка под сообщением об успехе.
+DISPLAY_HELP = {
+    "uz": (
+        "📹 <b>Sovg'ani profilda qanday ko'rsatish</b>\n\n"
+        "fragment.com → Telegram orqali kiring → <b>My assets</b> → sovg'ani tanlang → "
+        "profilda ko'rsatishni yoqing.\n\n"
+        "Chiqmasa — Telegram'ni qayta ishga tushiring yoki /operator ga yozing."
+    ),
+    "ru": (
+        "📹 <b>Как показать подарок в профиле</b>\n\n"
+        "fragment.com → войдите через Telegram → <b>My assets</b> → выберите подарок → "
+        "включите показ в профиле.\n\n"
+        "Если не появился — перезапустите Telegram или напишите /operator."
+    ),
+    "en": (
+        "📹 <b>How to display the gift on your profile</b>\n\n"
+        "fragment.com → sign in with Telegram → <b>My assets</b> → pick the gift → "
+        "enable showing it on your profile.\n\n"
+        "If it doesn't appear — restart Telegram or contact /operator."
+    ),
+}
+
+# Подпись кнопки с видео «как включить показ». Кнопка показывается всегда:
+# даже без записанного видео уйдёт текстовая инструкция — это лучше, чем
+# оставить человека с вопросом без ответа.
+DISPLAY_VIDEO_BTN = {
+    "uz": "📹 Profilda qanday ko'rsatish",
+    "ru": "📹 Как показать в профиле",
+    "en": "📹 How to display it",
+}
+
+
+def display_help_kb(lang: str):
+    """Кнопка с инструкцией под сообщением об успешном подключении."""
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    b = InlineKeyboardBuilder()
+    b.button(text=DISPLAY_VIDEO_BTN[lang], callback_data="rent:displayhelp")
+    return b.as_markup()
+
+
 # Первая неудача — НЕ повод пугать клиента: почти всегда это «админ ещё не
 # подтвердил перевод». Поэтому текст спокойный и без слова «ошибка».
 PENDING = {
@@ -92,9 +170,9 @@ async def _notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
             pass
 
 
-async def _notify_client(bot: Bot, user_id: int, text: str) -> None:
+async def _notify_client(bot: Bot, user_id: int, text: str, reply_markup=None) -> None:
     try:
-        await bot.send_message(user_id, text)
+        await bot.send_message(user_id, text, reply_markup=reply_markup)
     except Exception:
         pass  # клиент мог закрыть чат — не роняем подключение из-за этого
 
@@ -138,7 +216,15 @@ async def _complete_order(bot: Bot, order: dict) -> None:
 
 async def announce_success(bot: Bot, order: dict, attempt_note: str = "") -> None:
     lang = _lang_fallback(await get_user_language(order["user_id"]))
-    await _notify_client(bot, order["user_id"], SUCCESS[lang].format(item=order["item_name"]))
+    await _notify_client(
+        bot,
+        order["user_id"],
+        # Имя подарка приходит из MarketApp и может содержать символы, которые
+        # Telegram примет за HTML («&», «<»). Тогда сообщение не отправится
+        # вообще, и клиент решит, что его кинули. Экранируем.
+        SUCCESS[lang].format(item=html.escape(order["item_name"] or "")),
+        reply_markup=display_help_kb(lang),
+    )
     await _complete_order(bot, order)
     await _notify_admins(
         bot,
