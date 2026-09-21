@@ -16,28 +16,25 @@ from database.db import get_user_language
 # Текст на 3 языках — показываем на том, что клиент выбрал при /start.
 RENT_LINK_PROMPT = {
     "uz": (
-        "🎥 <b>Ijaraga olgan sovg'angizni qanday olish mumkin:</b>\n\n"
-        "Yuqoridagi videoni ko'ring — unda hamma narsa ko'rsatilgan.\n\n"
-        "🔗 <b>Havola <u>fragment.com</u> saytidan olinadi</b> — o'sha yerga "
-        "Telegram orqali kiring va shaxsiy havolangizni oling.\n\n"
-        "So'ngra <b>do'konni oching</b> va havolani yuqoridagi \"Aktiv buyurtma\" "
-        "bo'limidagi maydonga joylang — sovg'a avtomatik ulanadi ✅"
+        "🎥 <b>Videoda hammasi ko'rsatilgan:</b>\n\n"
+        "1️⃣ <b>fragment.com</b> dan shaxsiy havolani qanday olish\n"
+        "2️⃣ Sovg'ani profilda qanday ko'rsatish\n\n"
+        "Havolani olgach — <b>do'konni oching</b> va uni \"Aktiv buyurtma\" "
+        "bo'limidagi maydonga joylang ✅"
     ),
     "ru": (
-        "🎥 <b>Как получить арендованный подарок:</b>\n\n"
-        "Посмотрите видео выше — там показано всё по шагам.\n\n"
-        "🔗 <b>Ссылка берётся на сайте <u>fragment.com</u></b> — зайдите туда "
-        "через Telegram и получите свою персональную ссылку.\n\n"
-        "Затем <b>откройте магазин</b> и вставьте ссылку в поле в блоке "
-        "«Активный заказ» — подарок подключится автоматически ✅"
+        "🎥 <b>В видео показано всё:</b>\n\n"
+        "1️⃣ как получить персональную ссылку на <b>fragment.com</b>\n"
+        "2️⃣ как показать подарок в профиле\n\n"
+        "Получили ссылку — <b>откройте магазин</b> и вставьте её в поле "
+        "в блоке «Активный заказ» ✅"
     ),
     "en": (
-        "🎥 <b>How to get your rented gift:</b>\n\n"
-        "Watch the video above — it shows every step.\n\n"
-        "🔗 <b>The link comes from <u>fragment.com</u></b> — sign in there with "
-        "Telegram and get your personal link.\n\n"
-        "Then <b>open the shop</b> and paste the link into the field in the "
-        "\"Active order\" block — the gift will be connected automatically ✅"
+        "🎥 <b>The video shows everything:</b>\n\n"
+        "1️⃣ how to get your personal link on <b>fragment.com</b>\n"
+        "2️⃣ how to display the gift on your profile\n\n"
+        "Once you have the link — <b>open the shop</b> and paste it into the "
+        "field in the \"Active order\" block ✅"
     ),
 }
 

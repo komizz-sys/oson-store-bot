@@ -44,24 +44,31 @@ def subscribe_gate_kb(lang: str | None = None) -> InlineKeyboardMarkup:
 
 
 def main_menu_kb(lang: str | None = None) -> InlineKeyboardMarkup:
+    """
+    Главное меню: ОДИН вход в покупку — витрина.
+
+    Раньше здесь же лежали «Stars», «Premium», «Подарки», «Аренда» и
+    «Мои заказы», и получалось два независимых пути оформления: в чате и в
+    мини-аппе. Люди проходили оба — выбирали товар в чате, потом открывали
+    витрину и выбирали ещё раз. На выходе два заказа на одну покупку, два
+    скриншота одного платежа и разбор этого вручную.
+    Теперь покупка живёт только в витрине, а в чате остаётся то, чего в
+    витрине нет: оператор и смена языка.
+
+    Обработчики разделов (menu:stars и остальные) намеренно НЕ удалены: на
+    них ещё могут прийти нажатия со старых сообщений, висящих у клиентов в
+    переписке. Просто новых кнопок больше не появляется.
+    """
     b = InlineKeyboardBuilder()
-    # Магазин — отдельной широкой кнопкой сверху: это главный путь покупки,
-    # он должен бросаться в глаза раньше остальных пунктов.
     if config.WEBAPP_URL:
         b.button(text=t(lang, "menu_webapp"), web_app=WebAppInfo(url=config.WEBAPP_URL))
-    b.button(text=t(lang, "menu_stars"), callback_data="menu:stars")
-    b.button(text=t(lang, "menu_premium"), callback_data="menu:premium")
-    b.button(text=t(lang, "menu_simple_gift"), callback_data="menu:simple_gift")
-    b.button(text=t(lang, "menu_nft_rent"), callback_data="menu:nft_rent")
-    b.button(text=t(lang, "menu_my_orders"), callback_data="menu:my_orders")
     b.button(text=t(lang, "menu_support"), callback_data="menu:support")
     b.button(text=t(lang, "menu_change_language"), callback_data="menu:change_language")
-    # Магазин — на всю ширину сверху, товары и разделы сеткой по два,
-    # смена языка — отдельной строкой внизу (используется реже остальных).
+    # Витрина — во всю ширину сверху, под ней оператор и язык в один ряд.
     if config.WEBAPP_URL:
-        b.adjust(1, 2, 2, 2, 1)
+        b.adjust(1, 2)
     else:
-        b.adjust(2, 2, 2, 1)
+        b.adjust(2)
     return b.as_markup()
 
 

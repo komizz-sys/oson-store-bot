@@ -306,6 +306,8 @@ async def admin_help(message: Message):
         "/ban &lt;@username|id&gt; [причина] — заблокировать клиента: новые заказы "
         "и чеки от него бот принимать не будет (без аргумента — список забаненных)\n"
         "/unban &lt;@username|id&gt; — снять бан\n"
+        "/closeall — закрыть ВСЕ висящие заказы: оплаченные отметить выполненными, неоплаченные отменить (с подтверждением)\n"
+        "/userbalance &lt;@username|id&gt; [+/-сумма] — баланс клиента: посмотреть или поправить вручную (напр. /userbalance @ali +50000)\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
         "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
@@ -935,6 +937,220 @@ async def unban_cmd(message: Message, command):
         await message.answer(f"✅ <b>{name}</b> разбанен — может заказывать снова.")
     else:
         await message.answer("Этот клиент и не был забанен.")
+
+
+PAID_OPEN = ("paid", "fulfilling")
+UNPAID_OPEN = ("awaiting_payment", "payment_review")
+
+
+@router.message(Command("closeall"))
+async def close_all_cmd(message: Message):
+    """
+    Разом закрыть все висящие заказы.
+
+    Нужно после ручного разбора завала: половину заказов владелец уже
+    выполнил руками, половина так и не была оплачена, а в базе они все
+    числятся открытыми — мешают клиентам (упираются в лимит незакрытых) и
+    засоряют статистику.
+
+    Оплаченные и неоплаченные закрываются ПО-РАЗНОМУ. Объявить выполненным
+    заказ, за который не заплатили, нельзя: человек получит «ваш заказ
+    готов» и придёт за товаром.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.db import get_open_orders
+
+    orders = await get_open_orders()
+    if not orders:
+        await message.answer("Открытых заказов нет — закрывать нечего.")
+        return
+
+    paid = [o for o in orders if o["status"] in PAID_OPEN]
+    unpaid = [o for o in orders if o["status"] in UNPAID_OPEN]
+
+    lines = [f"🧹 <b>Открытых заказов: {len(orders)}</b>\n"]
+    if paid:
+        lines.append(f"✅ Оплаченных — <b>{len(paid)}</b> (отмечу выполненными, клиентам уйдёт «готово»):")
+        for o in paid[:15]:
+            lines.append(f"  • #{o['id']} — {o['item_name']} · {format_uzs(o['price_uzs'])}")
+        if len(paid) > 15:
+            lines.append(f"  …и ещё {len(paid) - 15}")
+        lines.append("")
+    if unpaid:
+        lines.append(f"❌ Неоплаченных — <b>{len(unpaid)}</b> (отменю, клиентам уйдёт «заказ отменён»):")
+        for o in unpaid[:15]:
+            lines.append(f"  • #{o['id']} — {o['item_name']} · {format_uzs(o['price_uzs'])}")
+        if len(unpaid) > 15:
+            lines.append(f"  …и ещё {len(unpaid) - 15}")
+        lines.append("")
+    lines.append("Отменить это будет нельзя. Подтверждаешь?")
+
+    b = InlineKeyboardBuilder()
+    b.button(text=f"🧹 Да, закрыть все {len(orders)}", callback_data="admin:closeall")
+    b.button(text="Отмена", callback_data="admin:sms_ignore")
+    b.adjust(1)
+    await message.answer("\n".join(lines), reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data == "admin:closeall")
+async def close_all_confirm(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+
+    from database.db import get_open_orders
+
+    orders = await get_open_orders()
+    if not orders:
+        await call.answer("Уже нечего закрывать", show_alert=True)
+        return
+
+    await call.answer("Закрываю…")
+    done = failed = cancelled = 0
+
+    for o in orders:
+        try:
+            if o["status"] in PAID_OPEN:
+                await set_order_status(o["id"], "completed")
+                done += 1
+                lang = await _get_user_language(o["user_id"])
+                try:
+                    await bot.send_message(
+                        o["user_id"],
+                        t(lang, "order_completed").format(
+                            order_id=o["id"], item_name=o["item_name"]
+                        ),
+                    )
+                except Exception:
+                    pass  # клиент мог закрыть чат — заказ всё равно закрыт
+            else:
+                await set_order_status(o["id"], "rejected", "Закрыт администратором")
+                cancelled += 1
+                try:
+                    await bot.send_message(
+                        o["user_id"],
+                        f"❌ Заказ #{o['id']} отменён — оплата не поступила.\n"
+                        "Если вы платили, напишите /operator, разберёмся.",
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            failed += 1
+            print(f"[CLOSEALL] заказ {o['id']}: {e}", flush=True)
+
+    await _append_note(
+        call,
+        f"\n\n🧹 Закрыто: выполнено {done}, отменено {cancelled}"
+        + (f", ошибок {failed}" if failed else ""),
+    )
+
+
+@router.message(Command("userbalance"))
+async def balance_admin_cmd(message: Message, command, bot: Bot):
+    """
+    Баланс клиента: посмотреть и поправить руками.
+
+    /userbalance @username         — показать остаток и операции
+    /userbalance @username +50000  — начислить (перевод пришёл мимо заявки)
+    /userbalance @username -50000  — списать (ошибочное зачисление, возврат)
+
+    Команда называется /userbalance, а не /balance: /balance — клиентская,
+    и если бы их звали одинаково, админский обработчик перехватывал бы её у
+    покупателей, и они не видели бы свой баланс вообще.
+
+    Правка всегда пишется в журнал операций: деньги клиента должны быть
+    прослеживаемы до копейки, иначе спор разрешить нечем.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.db import (
+        get_balance, get_balance_history, credit_balance, debit_balance,
+    )
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer(
+            "Чей баланс смотрим?\n\n"
+            "<code>/userbalance @username</code> — показать\n"
+            "<code>/userbalance @username +50000</code> — начислить\n"
+            "<code>/userbalance @username -50000</code> — списать"
+        )
+        return
+
+    parts = arg.split()
+    user = await _resolve_user(parts[0], message)
+    if not user:
+        return
+    user_id = user["user_id"]
+    name = user.get("full_name") or user.get("username") or user_id
+
+    if len(parts) > 1:
+        raw = parts[1].replace(" ", "")
+        try:
+            delta = int(raw)
+        except ValueError:
+            await message.answer("Сумма должна быть числом: <code>+50000</code> или <code>-50000</code>")
+            return
+        if delta == 0:
+            await message.answer("Ноль начислять незачем.")
+            return
+        # Потолок на ручную правку. Без него опечатка в двадцать цифр роняла
+        # команду на уровне sqlite, и админ вообще не получал ответа — то есть
+        # не знал, начислилось что-то или нет.
+        MAX_MANUAL = 100_000_000
+        if abs(delta) > MAX_MANUAL:
+            await message.answer(
+                f"Слишком большая сумма. Максимум за раз — {format_uzs(MAX_MANUAL)}."
+            )
+            return
+
+        who = f"вручную админом {message.from_user.id}"
+        if delta > 0:
+            left = await credit_balance(user_id, delta, who)
+            await message.answer(
+                f"➕ <b>{name}</b>: начислено {format_uzs(delta)}.\n"
+                f"Остаток: <b>{format_uzs(left)}</b>"
+            )
+        else:
+            if not await debit_balance(user_id, -delta, who):
+                await message.answer(
+                    f"Не хватает денег на балансе: сейчас "
+                    f"<b>{format_uzs(await get_balance(user_id))}</b>. Ничего не списал."
+                )
+                return
+            left = await get_balance(user_id)
+            await message.answer(
+                f"➖ <b>{name}</b>: списано {format_uzs(-delta)}.\n"
+                f"Остаток: <b>{format_uzs(left)}</b>"
+            )
+
+        # Клиент должен узнать об изменении сам, а не обнаружить его при покупке.
+        try:
+            lang = await _get_user_language(user_id)
+            await bot.send_message(
+                user_id,
+                t(lang, "balance_title").format(balance=format_uzs(await get_balance(user_id))),
+            )
+        except Exception:
+            pass
+        return
+
+    balance = await get_balance(user_id)
+    lines = [f"💼 <b>{name}</b> — баланс: <b>{format_uzs(balance)}</b>", ""]
+    history = await get_balance_history(user_id, limit=15)
+    if not history:
+        lines.append("Операций не было.")
+    else:
+        for h in history:
+            sign = "➕" if h["delta_uzs"] > 0 else "➖"
+            lines.append(
+                f"{sign} {format_uzs(abs(h['delta_uzs']))} — {h['reason'] or ''} "
+                f"<i>({h['created_at']})</i>"
+            )
+    await message.answer("\n".join(lines))
 
 
 @router.message(Command("banlist"))

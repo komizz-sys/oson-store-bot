@@ -66,56 +66,48 @@ CONNECTING = {
 SUCCESS = {
     "uz": (
         "✅ Tayyor! «{item}» sovg'asi hisobingizga o'tkazildi.\n\n"
-        "⚠️ Sovg'a profilda <b>o'zi ko'rinmaydi</b> — uni bir marta ko'rsatish kerak:\n\n"
-        "1️⃣ <b>fragment.com</b> ga Telegram orqali kiring\n"
-        "2️⃣ <b>My assets</b> bo'limini oching — sovg'a o'sha yerda\n"
-        "3️⃣ Sovg'ani tanlab, profilda ko'rsatishni yoqing\n\n"
-        "Pastdagi tugmani bossangiz — to'liq video qo'llanma yuboraman."
+        "⚠️ Sovg'a profilda <b>o'zi ko'rinmaydi</b> — uni bir marta "
+        "ko'rsatish kerak.\n\n"
+        "Pastdagi tugmani bosing — videoda qanday qilish ko'rsatilgan."
     ),
     "ru": (
         "✅ Готово! Подарок «{item}» переведён на ваш аккаунт.\n\n"
-        "⚠️ Сам по себе в профиле он <b>не появится</b> — показ нужно включить один раз:\n\n"
-        "1️⃣ Зайдите на <b>fragment.com</b> через Telegram\n"
-        "2️⃣ Откройте раздел <b>My assets</b> — подарок там\n"
-        "3️⃣ Выберите подарок и включите показ в профиле\n\n"
-        "Нажмите кнопку ниже — пришлю подробное видео."
+        "⚠️ Сам по себе в профиле он <b>не появится</b> — показ нужно "
+        "включить один раз.\n\n"
+        "Нажмите кнопку ниже — в видео показано, как это сделать."
     ),
     "en": (
         "✅ Done! The gift \"{item}\" has been transferred to your account.\n\n"
-        "⚠️ It will <b>not</b> show up on your profile by itself — you need to turn the display on once:\n\n"
-        "1️⃣ Sign in to <b>fragment.com</b> with Telegram\n"
-        "2️⃣ Open <b>My assets</b> — the gift is there\n"
-        "3️⃣ Select the gift and enable showing it on your profile\n\n"
-        "Tap the button below and I'll send a full video guide."
+        "⚠️ It will <b>not</b> appear on your profile by itself — the display "
+        "has to be turned on once.\n\n"
+        "Tap the button below — the video shows how."
     ),
 }
 
-# Та же инструкция, но как подпись к видео — её шлёт и кнопка в витрине
-# (/public/send_display_video), и кнопка под сообщением об успехе.
+# Подпись к видео. Само видео одно на всё: в нём и получение ссылки, и показ
+# подарка в профиле — поэтому текст только называет, что внутри, и не
+# пересказывает шаги словами.
 DISPLAY_HELP = {
     "uz": (
-        "📹 <b>Sovg'ani profilda qanday ko'rsatish</b>\n\n"
-        "fragment.com → Telegram orqali kiring → <b>My assets</b> → sovg'ani tanlang → "
-        "profilda ko'rsatishni yoqing.\n\n"
+        "🎥 <b>Videoda ko'rsatilgan:</b>\n\n"
+        "1️⃣ Havolani <b>fragment.com</b> dan qanday olish\n"
+        "2️⃣ Sovg'ani profilda qanday ko'rsatish\n\n"
         "Chiqmasa — Telegram'ni qayta ishga tushiring yoki /operator ga yozing."
     ),
     "ru": (
-        "📹 <b>Как показать подарок в профиле</b>\n\n"
-        "fragment.com → войдите через Telegram → <b>My assets</b> → выберите подарок → "
-        "включите показ в профиле.\n\n"
+        "🎥 <b>В видео показано:</b>\n\n"
+        "1️⃣ как получить ссылку на <b>fragment.com</b>\n"
+        "2️⃣ как показать подарок в профиле\n\n"
         "Если не появился — перезапустите Telegram или напишите /operator."
     ),
     "en": (
-        "📹 <b>How to display the gift on your profile</b>\n\n"
-        "fragment.com → sign in with Telegram → <b>My assets</b> → pick the gift → "
-        "enable showing it on your profile.\n\n"
+        "🎥 <b>The video shows:</b>\n\n"
+        "1️⃣ how to get the link on <b>fragment.com</b>\n"
+        "2️⃣ how to display the gift on your profile\n\n"
         "If it doesn't appear — restart Telegram or contact /operator."
     ),
 }
 
-# Подпись кнопки с видео «как включить показ». Кнопка показывается всегда:
-# даже без записанного видео уйдёт текстовая инструкция — это лучше, чем
-# оставить человека с вопросом без ответа.
 DISPLAY_VIDEO_BTN = {
     "uz": "📹 Profilda qanday ko'rsatish",
     "ru": "📹 Как показать в профиле",

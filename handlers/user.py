@@ -208,3 +208,31 @@ async def my_orders(call: CallbackQuery, state: FSMContext):
 
     await call.message.edit_text("\n".join(lines), reply_markup=markup)
     await call.answer()
+
+
+@router.message(Command("balans", "balance"))
+async def balance_cmd(message: Message):
+    """
+    Баланс клиента: остаток и последние операции.
+
+    Баланс нужен потому, что банк удерживает комиссию и «ровно столько-то»
+    на карту почти никогда не приходит. На счёт зачисляется сколько дошло,
+    а заказы с него оплачиваются точно и мгновенно.
+    """
+    from database.db import get_balance, get_balance_history
+
+    lang = await get_user_language(message.from_user.id)
+    balance = await get_balance(message.from_user.id)
+    lines = [t(lang, "balance_title").format(balance=format_uzs(balance)), ""]
+
+    history = await get_balance_history(message.from_user.id, limit=10)
+    if not history:
+        lines.append(t(lang, "balance_empty"))
+    else:
+        for h in history:
+            sign = "➕" if h["delta_uzs"] > 0 else "➖"
+            lines.append(f"{sign} {format_uzs(abs(h['delta_uzs']))} — {h['reason'] or ''}")
+
+    lines.append("")
+    lines.append(t(lang, "balance_topup_hint"))
+    await message.answer("\n".join(lines), reply_markup=main_menu_kb(lang))

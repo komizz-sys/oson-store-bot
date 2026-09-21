@@ -55,6 +55,47 @@ async def _expire_stale_orders_loop(bot: Bot):
         await asyncio.sleep(5 * 60)
 
 
+async def _webhook_watchdog(bot: Bot):
+    """
+    Сторож против «бот молчит на /start».
+
+    Telegram устроен так: либо вебхук, либо опрос (getUpdates) — вместе нельзя.
+    Стоит кому-то поставить боту вебхук, и Telegram перестаёт отдавать
+    сообщения: бот живой, мини-апп работает, а чат мёртвый. Понять это по
+    поведению невозможно — только по логам, куда никто не смотрит в момент,
+    когда идёт реклама.
+
+    Поэтому раз в минуту проверяем, не появился ли вебхук, снимаем его и
+    ОБЯЗАТЕЛЬНО пишем админу, откуда он взялся: сам по себе вебхук не
+    появляется, и адрес в нём — прямая улика.
+    """
+    await asyncio.sleep(60)
+    while True:
+        try:
+            info = await bot.get_webhook_info()
+            if info and info.url:
+                url = info.url
+                await bot.delete_webhook(drop_pending_updates=False)
+                logging.error(f"Обнаружен и снят чужой вебхук: {url}")
+                for admin_id in config.ADMIN_IDS:
+                    try:
+                        await bot.send_message(
+                            admin_id,
+                            "🚨 <b>Кто-то поставил боту вебхук</b>\n\n"
+                            f"Адрес: <code>{url}</code>\n\n"
+                            "Пока он стоял, Telegram не отдавал боту сообщения — "
+                            "бот молчал на /start. Я его снял, чат снова работает.\n\n"
+                            "Сам по себе вебхук не появляется. Если этот адрес "
+                            "тебе незнаком — смени токен в @BotFather "
+                            "(Revoke current token) и впиши новый в BOT_TOKEN.",
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logging.error(f"Проверка вебхука не удалась: {e}")
+        await asyncio.sleep(60)
+
+
 async def main():
     await init_db()
 
@@ -126,6 +167,9 @@ async def main():
     # суммах: именно она снимает с клиента "висящие" заявки, из-за которых он
     # упирается в лимит незакрытых заказов и не может купить снова.
     _BACKGROUND_TASKS.append(asyncio.create_task(_expire_stale_orders_loop(bot)))
+
+    # Сторож вебхука — см. комментарий у _webhook_watchdog.
+    _BACKGROUND_TASKS.append(asyncio.create_task(_webhook_watchdog(bot)))
 
     await dp.start_polling(bot)
 

@@ -38,11 +38,149 @@ from database.db import (
     find_expired_order_by_amount, get_order, set_order_status, set_cart_status,
     find_underpaid_orders, get_user_language,
     remember_topup, find_topup_order, clear_topup,
+    find_topup_requests, close_topup_request, credit_balance,
 )
 from handlers.admin import finalize_payment, finalize_cart_payment
 from services.i18n import t
 
 router = Router()
+
+
+async def _credit_topup(bot: Bot, amount: int, topup: dict) -> None:
+    """Зачислить пополнение и сказать об этом клиенту и админу."""
+    from services.prices import format_uzs
+
+    user_id = topup["user_id"]
+
+    # СНАЧАЛА закрываем заявку, и только если она закрылась именно нами —
+    # зачисляем. Обратный порядок дарил деньги: дубль SMS или два админа,
+    # нажавшие кнопку каждый в своём чате, давали два зачисления за один
+    # перевод.
+    try:
+        if not await close_topup_request(topup["id"], amount):
+            print(f"[BALANCE] заявка {topup['id']} уже закрыта — повторно не зачисляю", flush=True)
+            return
+    except Exception as e:
+        print(f"[BALANCE] не удалось закрыть заявку {topup['id']}: {e}", flush=True)
+        return
+
+    try:
+        balance = await credit_balance(user_id, amount, "Пополнение баланса")
+    except Exception as e:
+        print(f"[BALANCE] не удалось зачислить {amount} клиенту {user_id}: {e}", flush=True)
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"⚠️ Пришло {format_uzs(amount)} — это пополнение клиента "
+                    f"<code>{user_id}</code>, но зачислить не вышло: {e}\n"
+                    f"Зачисли вручную: <code>/balance {user_id} +{amount}</code>",
+                )
+            except Exception:
+                pass
+        return
+
+    lang = await get_user_language(user_id) or "uz"
+    if lang not in ("uz", "ru", "en"):
+        lang = "uz"
+
+    # Если пришло заметно меньше ожидаемого — говорим об этом прямо, но
+    # спокойно: деньги на счету, просто банк взял своё. Просить доплату
+    # здесь НЕ нужно, в этом и весь смысл баланса.
+    short = max(0, int(topup["expected_uzs"]) - amount)
+    try:
+        text = t(lang, "topup_done").format(
+            amount=format_uzs(amount), balance=format_uzs(balance)
+        )
+        if short > 0:
+            text += "\n\n" + t(lang, "topup_fee_note").format(fee=format_uzs(short))
+        await bot.send_message(user_id, text)
+    except Exception:
+        pass
+
+    print(f"[BALANCE] +{amount} клиенту {user_id}, остаток {balance}", flush=True)
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"💼 Баланс пополнен: <b>{format_uzs(amount)}</b>\n"
+                f"Клиент: <code>{user_id}</code> · остаток {format_uzs(balance)}"
+                + (f"\nБанк удержал {format_uzs(short)}" if short else ""),
+            )
+        except Exception:
+            pass
+
+
+async def _ask_admin_which_match(bot: Bot, amount: int,
+                                 orders: list[dict], topups: list[dict]) -> None:
+    """
+    Под сумму подошло больше одного варианта — решает человек.
+
+    Автоматика тут запрещена: ошибиться значит либо подарить деньги одного
+    клиента другому, либо выполнить чужой заказ. Показываем всех кандидатов
+    и даём по кнопке на каждого.
+    """
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from services.prices import format_uzs
+
+    b = InlineKeyboardBuilder()
+    lines = [
+        f"❓ <b>Пришло {format_uzs(amount)} — подходит несколько вариантов.</b>\n",
+        "Автоматически не подтверждаю: ошибка тут стоит денег. Выбери сам:",
+    ]
+
+    for o in orders:
+        who = o.get("username") and f"@{o['username']}" or f"id {o['user_id']}"
+        expected = o.get("expected_amount_uzs") or o["price_uzs"]
+        lines.append(
+            f"  🛒 заказ <b>#{o['id']}</b> — {o['item_name']} · от {who} · ждём {format_uzs(expected)}"
+        )
+        if o.get("cart_id"):
+            b.button(text=f"✅ Заказ {o['id']} (корзина)", callback_data=f"admin:approve_cart:{o['cart_id']}")
+        else:
+            b.button(text=f"✅ Заказ #{o['id']}", callback_data=f"admin:approve:{o['id']}")
+
+    for tp in topups:
+        lines.append(
+            f"  💼 пополнение клиента <code>{tp['user_id']}</code> · ждём {format_uzs(tp['expected_uzs'])}"
+        )
+        b.button(
+            text=f"💼 Пополнение клиенту {tp['user_id']}",
+            callback_data=f"topup:credit:{tp['id']}:{amount}",
+        )
+
+    b.button(text="🚫 Не наш платёж", callback_data="admin:sms_ignore")
+    b.adjust(1)
+
+    print(f"[SMS] {amount}: заказов {len(orders)}, пополнений {len(topups)}", flush=True)
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, "\n".join(lines), reply_markup=b.as_markup())
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data.startswith("topup:credit:"))
+async def credit_topup_manually(call: CallbackQuery, bot: Bot):
+    """Админ выбрал, чьё это пополнение."""
+    if call.from_user.id not in config.ADMIN_IDS:
+        await call.answer("Только для админа", show_alert=True)
+        return
+
+    _, _, topup_id, amount = call.data.split(":")
+    from database.db import get_pending_topup_by_id
+
+    topup = await get_pending_topup_by_id(int(topup_id))
+    if not topup:
+        await call.answer("Эта заявка уже закрыта", show_alert=True)
+        return
+
+    await _credit_topup(bot, int(amount), topup)
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await call.answer("Зачислено")
 
 
 async def _handle_underpayment(bot: Bot, amount: int, candidates: list[dict]) -> None:
@@ -402,6 +540,22 @@ async def handle_sms_relay(message: Message, bot: Bot):
             candidates = await find_underpaid_orders(
                 amount, config.SMS_UNDERPAY_MAX_GAP_UZS, within_hours=window
             )
+
+        # Пополнения ищем ЗДЕСЬ ЖЕ и в общей куче с заказами.
+        #
+        # Раньше пополнения проверялись первыми и с широким допуском — и
+        # перевод, сделанный по заказу, «прилипал» к чужому пополнению с
+        # похожей суммой: деньги уходили на баланс постороннего человека, а
+        # заказ так и висел неоплаченным. Теперь если под сумму подходит
+        # больше одного варианта — не решаем сами, показываем админу.
+        topups = await find_topup_requests(amount, config.TOPUP_TOLERANCE_UZS, hours=window)
+
+        if len(candidates) + len(topups) > 1:
+            await _ask_admin_which_match(bot, amount, candidates, topups)
+            return
+        if topups:
+            await _credit_topup(bot, amount, topups[0])
+            return
         if candidates:
             await _handle_underpayment(bot, amount, candidates)
             return

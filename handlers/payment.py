@@ -1,6 +1,7 @@
 import asyncio
 
 from aiogram import Router, F, Bot
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
@@ -294,4 +295,41 @@ async def handle_start_in_state(message: Message, state: FSMContext):
 
 @router.message(OrderStates.waiting_payment_proof)
 async def wrong_proof_format(message: Message):
+    # Команды пропускаем дальше по цепочке. Иначе человек, ждущий оплаты,
+    # оказывался в ловушке: на /balans, /operator и любую другую команду бот
+    # отвечал «пришлите чек» — и выйти из этого состояния было нечем.
+    if (message.text or "").startswith("/"):
+        raise SkipHandler()
     await message.answer("Пришлите, пожалуйста, скриншот или файл чека об оплате 📎 (или нажмите «Отмена» выше)")
+
+
+@router.message(F.photo | F.document)
+async def orphan_receipt(message: Message, state: FSMContext, bot: Bot):
+    """
+    Чек прислали в чат, а состояния нет — находим заказ сами.
+
+    Когда это случается: бот перезапустился (состояние живёт в памяти и при
+    рестарте теряется), или клиент оформил заказ в витрине неделю назад и
+    только сейчас прислал чек в переписку. Раньше бот отвечал «не нашёл
+    номер заказа» — человек оплатил и упёрся в тупик.
+
+    Ищем у него незакрытый заказ и обрабатываем чек как обычно. Если такого
+    заказа нет, пропускаем сообщение дальше: это просто фотография, а не чек.
+    """
+    from database.db import get_user_orders
+
+    try:
+        orders = await get_user_orders(message.from_user.id)
+    except Exception:
+        raise SkipHandler()
+
+    active = next(
+        (o for o in orders if o["status"] in ("awaiting_payment", "payment_review")),
+        None,
+    )
+    if not active:
+        raise SkipHandler()  # не чек — не наше дело
+
+    await state.update_data(order_id=active["id"], cart_id=active.get("cart_id"))
+    await state.set_state(OrderStates.waiting_payment_proof)
+    await got_payment_proof(message, state, bot)

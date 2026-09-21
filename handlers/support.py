@@ -7,6 +7,7 @@
 """
 
 from aiogram import Router, F, Bot
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -60,6 +61,13 @@ async def start_support(call: CallbackQuery, state: FSMContext):
 
 @router.message(SupportStates.writing)
 async def relay_to_admin(message: Message, state: FSMContext, bot: Bot):
+    # Команда — это не сообщение оператору. Раньше человек, открывший
+    # поддержку и передумавший, отправлял тебе «/start» и «/balans» вместо
+    # вопроса, а сам оставался в режиме переписки.
+    if (message.text or "").startswith("/"):
+        await state.clear()
+        raise SkipHandler()
+
     lang = await get_user_language(message.from_user.id)
     user = message.from_user
 

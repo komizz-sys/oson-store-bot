@@ -85,6 +85,33 @@ TRANSLATIONS = {
         "my_orders_active_title": "💳 <b>#{order_id} — to'lov kutilmoqda</b>",
         "my_orders_exact": "⚠️ <b>Aynan shu summani o'tkazing: {amount}</b>\n<i>Bir so'm ham kam yoki ko'p emas — aks holda to'lov avtomatik tasdiqlanmaydi.</i>",
         "my_orders_send_here": "To'lagach, chekni shu yerga rasm qilib yuboring.",
+        "topup_done": (
+            "💼 <b>Balansingiz to'ldirildi: +{amount}</b>\n\n"
+            "Joriy balans: <b>{balance}</b>\n\n"
+            "Endi buyurtmalarni balansdan bir bosishda to'laysiz — "
+            "chek yuborish va summani aniq kiritish shart emas."
+        ),
+        "topup_fee_note": (
+            "ℹ️ Bank o'tkazma uchun {fee} komissiya ushladi, shuning uchun "
+            "kartaga sal kamroq tushdi. Balansga aynan tushgan summa yozildi."
+        ),
+        "topup_created": (
+            "💼 <b>Balansni to'ldirish</b>\n\n"
+            "Quyidagi kartaga <b>{amount}</b> o'tkazing:\n"
+            "<code>{card}</code>\n"
+            "{holder}\n\n"
+            "Summa aniq bo'lmasa ham qo'rqmang — bankning komissiyasi bo'lsa, "
+            "balansga qancha tushgan bo'lsa, shuncha yoziladi.\n\n"
+            "Pul tushgach xabar beraman. Balansdagi mablag' faqat "
+            "do'kondagi xaridlar uchun ishlatiladi."
+        ),
+        "balance_title": "💼 <b>Balansingiz: {balance}</b>",
+        "balance_empty": "Hozircha operatsiyalar yo'q.",
+        "balance_topup_hint": "To'ldirish uchun do'konni oching → <b>Profil</b> → <b>Balansni to'ldirish</b>.",
+        "paid_from_balance": (
+            "✅ <b>Buyurtma #{order_id} balansdan to'landi</b>\n\n"
+            "Yechildi: <b>{amount}</b>\nQoldiq: <b>{balance}</b>"
+        ),
         "too_many_pending": (
             "⚠️ Sizda to'lanmagan buyurtmalar juda ko'p.\n\n"
             "Avval shularni to'lang yoki bekor qiling — keyin yangisini "
@@ -214,6 +241,33 @@ TRANSLATIONS = {
         "my_orders_active_title": "💳 <b>#{order_id} — ждёт оплаты</b>",
         "my_orders_exact": "⚠️ <b>Переведите ровно: {amount}</b>\n<i>Ни сумом больше, ни сумом меньше — иначе оплата не подтвердится автоматически.</i>",
         "my_orders_send_here": "После оплаты пришлите чек картинкой сюда.",
+        "topup_done": (
+            "💼 <b>Баланс пополнен: +{amount}</b>\n\n"
+            "Текущий баланс: <b>{balance}</b>\n\n"
+            "Теперь заказы оплачиваются с баланса в одно нажатие — "
+            "без чеков и без точных сумм."
+        ),
+        "topup_fee_note": (
+            "ℹ️ Банк удержал за перевод {fee}, поэтому на карту пришло чуть "
+            "меньше. На баланс зачислено ровно столько, сколько дошло."
+        ),
+        "topup_created": (
+            "💼 <b>Пополнение баланса</b>\n\n"
+            "Переведите <b>{amount}</b> на карту:\n"
+            "<code>{card}</code>\n"
+            "{holder}\n\n"
+            "Если сумма выйдет не точной — не страшно: банк может удержать "
+            "комиссию, и на баланс зачислится столько, сколько реально дошло.\n\n"
+            "Как деньги придут — напишу. Баланс тратится только на покупки "
+            "в магазине."
+        ),
+        "balance_title": "💼 <b>Ваш баланс: {balance}</b>",
+        "balance_empty": "Операций пока нет.",
+        "balance_topup_hint": "Чтобы пополнить — откройте магазин → <b>Профиль</b> → <b>Пополнить баланс</b>.",
+        "paid_from_balance": (
+            "✅ <b>Заказ #{order_id} оплачен с баланса</b>\n\n"
+            "Списано: <b>{amount}</b>\nОстаток: <b>{balance}</b>"
+        ),
         "too_many_pending": (
             "⚠️ У вас слишком много неоплаченных заказов.\n\n"
             "Оплатите или отмените их — после этого можно оформить новый."
@@ -342,6 +396,33 @@ TRANSLATIONS = {
         "my_orders_active_title": "💳 <b>#{order_id} — awaiting payment</b>",
         "my_orders_exact": "⚠️ <b>Transfer exactly: {amount}</b>\n<i>Not a som more, not a som less — otherwise the payment won't confirm automatically.</i>",
         "my_orders_send_here": "After paying, send the receipt here as a photo.",
+        "topup_done": (
+            "💼 <b>Balance topped up: +{amount}</b>\n\n"
+            "Current balance: <b>{balance}</b>\n\n"
+            "Orders are now paid from your balance in one tap — "
+            "no receipts, no exact amounts."
+        ),
+        "topup_fee_note": (
+            "ℹ️ The bank charged {fee} for the transfer, so slightly less "
+            "arrived. Your balance was credited with exactly what came in."
+        ),
+        "topup_created": (
+            "💼 <b>Top up your balance</b>\n\n"
+            "Transfer <b>{amount}</b> to the card:\n"
+            "<code>{card}</code>\n"
+            "{holder}\n\n"
+            "If the amount isn't exact, don't worry — the bank may take a fee, "
+            "and your balance is credited with whatever actually arrives.\n\n"
+            "I'll message you when it lands. The balance can only be spent "
+            "in this shop."
+        ),
+        "balance_title": "💼 <b>Your balance: {balance}</b>",
+        "balance_empty": "No transactions yet.",
+        "balance_topup_hint": "To top up — open the shop → <b>Profile</b> → <b>Top up balance</b>.",
+        "paid_from_balance": (
+            "✅ <b>Order #{order_id} paid from balance</b>\n\n"
+            "Charged: <b>{amount}</b>\nRemaining: <b>{balance}</b>"
+        ),
         "too_many_pending": (
             "⚠️ You have too many unpaid orders.\n\n"
             "Pay or cancel them first, then you can place a new one."

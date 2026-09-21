@@ -112,6 +112,42 @@ CREATE TABLE IF NOT EXISTS pending_topups (
 )
 """
 
+# Баланс клиента — внутренний счёт магазина.
+#
+# Зачем он появился: банк почти всегда удерживает комиссию, и на карту
+# приходит не та сумма, которую человек отправил (отправил 50 000 — пришло
+# 49 559). Для заказа это провал: сумма не совпала, заказ висит. Для баланса —
+# просто зачисление на столько, сколько реально дошло. Дальше заказы
+# оплачиваются с баланса мгновенно и ровно, без чеков и без сверок.
+#
+# Деньги на балансе НЕ выводятся обратно — это счёт для покупок внутри
+# магазина, и клиенту это сказано прямым текстом при пополнении.
+CREATE_BALANCE_TXNS_TABLE = """
+CREATE TABLE IF NOT EXISTS balance_txns (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    delta_uzs  INTEGER NOT NULL,
+    reason     TEXT,
+    order_id   INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+# Заявка на пополнение: клиент сказал «хочу пополнить на N», бот выдал ему
+# сумму с уникальным хвостом. По ней и опознаём поступление — SMS от банка
+# сообщает сумму, но не отправителя, и другого способа понять, чей это
+# перевод, у нас нет.
+CREATE_TOPUP_REQUESTS_TABLE = """
+CREATE TABLE IF NOT EXISTS topup_requests (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    expected_uzs INTEGER NOT NULL,
+    status     TEXT DEFAULT 'pending',
+    credited_uzs INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
 CREATE_BANNED_TABLE = """
 CREATE TABLE IF NOT EXISTS banned_users (
     user_id INTEGER PRIMARY KEY,
@@ -148,10 +184,14 @@ async def init_db():
         await db.execute(CREATE_LEADERBOARD_HIDDEN_TABLE)
         await db.execute(CREATE_BANNED_TABLE)
         await db.execute(CREATE_ADMIN_CARDS_TABLE)
+        await db.execute(CREATE_BALANCE_TXNS_TABLE)
+        await db.execute(CREATE_TOPUP_REQUESTS_TABLE)
         await db.execute(CREATE_PENDING_TOPUPS_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
+            "ALTER TABLE users ADD COLUMN balance_uzs INTEGER NOT NULL DEFAULT 0",
+            "CREATE INDEX IF NOT EXISTS idx_topups_amount ON topup_requests(expected_uzs)",
             "ALTER TABLE users ADD COLUMN last_seen TEXT",
             "ALTER TABLE orders ADD COLUMN content_video_url TEXT",
             "ALTER TABLE orders ADD COLUMN content_text TEXT",
@@ -483,19 +523,35 @@ async def _pick_free_amount(base_price_uzs: int, max_offset: int, db=None) -> in
     сутки. Иначе выходит так: заказ протух, его сумму отдали новому клиенту,
     а деньги по старой сумме приходят через час — и подтверждается ЧУЖОЙ заказ.
     """
+    # Суммы заказов И суммы незакрытых пополнений — один общий пул. Если их
+    # не объединить, заказу и пополнению может достаться одна сумма, и по
+    # поступлению будет непонятно, что это: оплата товара или пополнение счёта.
     query = (
         "SELECT expected_amount_uzs FROM orders WHERE expected_amount_uzs IS NOT NULL AND ("
         f"  status IN ({','.join('?' for _ in UNPAID_STATUSES)})"
         "  OR (status = 'rejected' AND created_at >= datetime('now', '-1 day'))"
         ")"
     )
+    topup_query = (
+        "SELECT expected_uzs FROM topup_requests "
+        "WHERE status = 'pending' AND created_at >= datetime('now', '-1 day')"
+    )
+
+    async def _collect(conn):
+        async with conn.execute(query, UNPAID_STATUSES) as cur:
+            found = {row[0] async for row in cur}
+        try:
+            async with conn.execute(topup_query) as cur:
+                found |= {row[0] async for row in cur}
+        except Exception:
+            pass  # таблицы ещё нет (первый запуск после обновления)
+        return found
+
     if db is None:
         async with aiosqlite.connect(config.DB_PATH) as conn:
-            async with conn.execute(query, UNPAID_STATUSES) as cur:
-                taken = {row[0] async for row in cur}
+            taken = await _collect(conn)
     else:
-        async with db.execute(query, UNPAID_STATUSES) as cur:
-            taken = {row[0] async for row in cur}
+        taken = await _collect(db)
 
     candidates = [
         base_price_uzs + offset
@@ -1272,6 +1328,307 @@ async def clear_topup(order_id: int):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("DELETE FROM pending_topups WHERE order_id = ?", (order_id,))
         await db.commit()
+
+
+# ---- Баланс клиента ----
+
+async def get_balance(user_id: int) -> int:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            "SELECT COALESCE(balance_uzs, 0) FROM users WHERE user_id = ?", (user_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return int(row[0]) if row else 0
+
+
+async def credit_balance(user_id: int, amount: int, reason: str, order_id: int | None = None) -> int:
+    """Зачислить на баланс. Возвращает новый остаток."""
+    if amount <= 0:
+        return await get_balance(user_id)
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            # Строки пользователя может не быть: в витрину можно попасть по
+            # прямой ссылке, ни разу не нажав /start. Без этой вставки UPDATE
+            # не находил кого обновлять, деньги "зачислялись" в никуда, и
+            # достать их обратно было нечем — клиент платил, баланс 0.
+            await db.execute(
+                "INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, '', '')",
+                (user_id,),
+            )
+            await db.execute(
+                "UPDATE users SET balance_uzs = COALESCE(balance_uzs, 0) + ? WHERE user_id = ?",
+                (amount, user_id),
+            )
+            await db.execute(
+                "INSERT INTO balance_txns (user_id, delta_uzs, reason, order_id) VALUES (?, ?, ?, ?)",
+                (user_id, amount, reason, order_id),
+            )
+            async with db.execute(
+                "SELECT COALESCE(balance_uzs, 0) FROM users WHERE user_id = ?", (user_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            await db.commit()
+            return int(row[0]) if row else 0
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def debit_balance(user_id: int, amount: int, reason: str, order_id: int | None = None) -> bool:
+    """
+    Списать с баланса. False — денег не хватило, НИЧЕГО не списано.
+
+    Проверка остатка и списание идут одной транзакцией: иначе два заказа,
+    оформленных одновременно, оба увидели бы «денег хватает» и ушли в минус.
+    """
+    if amount <= 0:
+        return True
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        # BEGIN внутри try: под нагрузкой sqlite отдаёт "database is locked",
+        # и снаружи try это исключение улетало мимо перехвата — клиент видел
+        # "ошибка сети" на оплате и не понимал, списались деньги или нет.
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            async with db.execute(
+                "SELECT COALESCE(balance_uzs, 0) FROM users WHERE user_id = ?", (user_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if not row or int(row[0]) < amount:
+                await db.rollback()
+                return False
+            await db.execute(
+                "UPDATE users SET balance_uzs = balance_uzs - ? WHERE user_id = ?",
+                (amount, user_id),
+            )
+            await db.execute(
+                "INSERT INTO balance_txns (user_id, delta_uzs, reason, order_id) VALUES (?, ?, ?, ?)",
+                (user_id, -amount, reason, order_id),
+            )
+            await db.commit()
+            return True
+        except Exception:
+            await db.rollback()
+            return False
+
+
+async def pay_order_from_balance(order_id: int, user_id: int, amount: int,
+                                 cart_id: str | None = None) -> str:
+    """
+    Оплатить заказ с баланса ОДНОЙ транзакцией: проверка статуса, списание
+    и перевод заказа в «оплачен» — вместе или никак.
+
+    -> "ok" | "wrong_status" | "insufficient" | "busy"
+
+    Почему так, а не тремя шагами: между проверкой и списанием есть await, и
+    клиент, тапнувший кнопку трижды, проходил проверку трижды. Деньги
+    списывались три раза, а заказ выполнялся три раза — за счёт магазина.
+    Тут же заказ ещё и «занимается» сменой статуса, поэтому второй запрос
+    видит его уже не awaiting_payment и уходит ни с чем.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+
+            if cart_id:
+                async with db.execute(
+                    "SELECT COUNT(*) FROM orders WHERE cart_id = ? AND status != 'awaiting_payment'",
+                    (cart_id,),
+                ) as cur:
+                    wrong = (await cur.fetchone())[0]
+                if wrong:
+                    await db.rollback()
+                    return "wrong_status"
+            else:
+                async with db.execute(
+                    "SELECT status FROM orders WHERE id = ? AND user_id = ?", (order_id, user_id)
+                ) as cur:
+                    row = await cur.fetchone()
+                if not row or row[0] != "awaiting_payment":
+                    await db.rollback()
+                    return "wrong_status"
+
+            async with db.execute(
+                "SELECT COALESCE(balance_uzs, 0) FROM users WHERE user_id = ?", (user_id,)
+            ) as cur:
+                brow = await cur.fetchone()
+            if not brow or int(brow[0]) < amount:
+                await db.rollback()
+                return "insufficient"
+
+            await db.execute(
+                "UPDATE users SET balance_uzs = balance_uzs - ? WHERE user_id = ?",
+                (amount, user_id),
+            )
+            label = f"корзина {cart_id}" if cart_id else f"заказ #{order_id}"
+            await db.execute(
+                "INSERT INTO balance_txns (user_id, delta_uzs, reason, order_id) VALUES (?, ?, ?, ?)",
+                (user_id, -amount, f"Оплата: {label}", order_id),
+            )
+            if cart_id:
+                await db.execute(
+                    "UPDATE orders SET status = 'paid' WHERE cart_id = ? AND status = 'awaiting_payment'",
+                    (cart_id,),
+                )
+            else:
+                await db.execute(
+                    "UPDATE orders SET status = 'paid' WHERE id = ? AND status = 'awaiting_payment'",
+                    (order_id,),
+                )
+            await db.commit()
+            return "ok"
+        except Exception as e:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            print(f"[BALANCE] оплата заказа {order_id} сорвалась: {e}", flush=True)
+            return "busy"
+
+
+async def refund_to_balance(user_id: int, amount: int, reason: str, order_id: int | None = None) -> int:
+    """Вернуть деньги на баланс — когда списали, а выполнить не смогли."""
+    return await credit_balance(user_id, amount, reason, order_id)
+
+
+async def get_balance_history(user_id: int, limit: int = 10) -> list[dict]:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM balance_txns WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+# ---- Заявки на пополнение ----
+
+async def create_topup_request(user_id: int, base_amount: int, max_offset: int) -> dict:
+    """
+    Создать заявку на пополнение и выдать сумму с уникальным хвостом.
+
+    Хвост нужен ровно для одного: опознать перевод. SMS от банка говорит
+    сумму, но не отправителя, и без уникальной суммы понять, чьи это деньги,
+    невозможно. Сумма подбирается так, чтобы не совпасть ни с другой заявкой,
+    ни с суммой какого-нибудь ждущего оплаты заказа.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            amount = await _pick_free_amount(base_amount, max_offset, db)
+            cur = await db.execute(
+                "INSERT INTO topup_requests (user_id, expected_uzs) VALUES (?, ?)",
+                (user_id, amount),
+            )
+            await db.commit()
+            return {"id": cur.lastrowid, "expected": amount, "base": base_amount}
+        except Exception:
+            await db.rollback()
+            raise
+
+
+TOPUP_OVERPAY_SLACK = 50  # на столько пришедшее может превысить ожидаемое
+
+
+async def find_topup_requests(amount: int, tolerance: int, hours: int = 24) -> list[dict]:
+    """
+    Заявки на пополнение, под которые подходит это поступление.
+
+    Ищем с допуском ВНИЗ: банк удерживает комиссию, поэтому на карту приходит
+    не больше ожидаемого, а меньше. Сверху тоже даём небольшой запас — люди
+    иногда округляют вверх.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            f"""SELECT * FROM topup_requests
+                WHERE status = 'pending'
+                  AND expected_uzs - ? BETWEEN ? AND ?
+                  AND created_at >= datetime('now', '-{int(hours)} hours')
+                ORDER BY ABS(expected_uzs - ?) ASC, id DESC
+                LIMIT 5""",
+            # Вниз — на размер комиссии банка, вверх — почти ноль.
+            # Комиссия может только УМЕНЬШИТЬ пришедшую сумму. Симметричный
+            # допуск ловил чужие платежи: перевод на 11 000 по заказу
+            # «прилипал» к пополнению, ожидавшему 10 437, и деньги уходили
+            # не тому человеку.
+            (amount, -TOPUP_OVERPAY_SLACK, tolerance, amount),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def close_topup_request(topup_id: int, credited: int) -> bool:
+    """
+    Закрыть заявку. False — её уже закрыли, зачислять НЕЛЬЗЯ.
+
+    Это замок, а не пометка: зачисление делается ТОЛЬКО после того, как эта
+    функция вернула True. Иначе одно поступление легко превращалось в два
+    зачисления — SMS продублировалась, или два админа нажали кнопку каждый в
+    своём чате, и магазин дарил клиентам деньги из воздуха.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE topup_requests SET status = 'done', credited_uzs = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (credited, topup_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def cancel_topup_request(user_id: int) -> bool:
+    """Отменить своё незакрытое пополнение — чтобы заказать другую сумму."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE topup_requests SET status = 'cancelled' "
+            "WHERE user_id = ? AND status = 'pending'",
+            (user_id,),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
+async def get_pending_topup_by_id(topup_id: int) -> dict | None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM topup_requests WHERE id = ? AND status = 'pending'", (topup_id,)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_pending_topup(user_id: int) -> dict | None:
+    """Последняя незакрытая заявка клиента — её показывает витрина."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT * FROM topup_requests
+               WHERE user_id = ? AND status = 'pending'
+                 AND created_at >= datetime('now', '-24 hours')
+               ORDER BY id DESC LIMIT 1""",
+            (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_open_orders() -> list[dict]:
+    """
+    Все незакрытые заказы — для массового закрытия командой /closeall.
+
+    Делим их по смыслу: оплаченные (их владелец уже выполнил руками) и
+    неоплаченные (их надо отменить, а не объявлять выполненными — иначе
+    человек, который так и не заплатил, получит «ваш заказ готов»).
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT * FROM orders
+               WHERE status IN ('awaiting_payment', 'payment_review', 'paid', 'fulfilling')
+               ORDER BY id"""
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
 
 # ---- Бан клиентов ----

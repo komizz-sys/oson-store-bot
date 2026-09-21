@@ -304,6 +304,240 @@ async def handle_send_display_video(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_balance(request: web.Request) -> web.Response:
+    """Остаток и последние операции — для вкладки «Профиль» в витрине."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    from database.db import get_balance, get_balance_history, get_pending_topup
+
+    balance = await get_balance(user["id"])
+    history = await get_balance_history(user["id"], limit=10)
+    pending = await get_pending_topup(user["id"])
+    return web.json_response({
+        "balance": balance,
+        "history": history,
+        "pending_topup": (
+            {"expected": pending["expected_uzs"], "created_at": pending["created_at"]}
+            if pending else None
+        ),
+        "card_number": config.PAYMENT_CARD_NUMBER,
+        "card_holder": config.PAYMENT_CARD_HOLDER,
+        "min_uzs": config.TOPUP_MIN_UZS,
+        "max_uzs": config.TOPUP_MAX_UZS,
+    })
+
+
+async def handle_create_topup(request: web.Request) -> web.Response:
+    """
+    Заявка на пополнение: выдаём сумму с уникальным хвостом.
+
+    Хвост — единственный способ понять, чей это перевод: SMS от банка
+    сообщает сумму, но не отправителя. При этом на баланс потом зачисляется
+    РОВНО столько, сколько реально пришло, — комиссия банка просто уменьшает
+    зачисление и ничего не ломает.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    blocked = await _banned_response(user["id"])
+    if blocked is not None:
+        return blocked
+
+    try:
+        amount = int(body.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount < config.TOPUP_MIN_UZS or amount > config.TOPUP_MAX_UZS:
+        return web.json_response({"error": "bad_amount"}, status=400)
+
+    from database.db import create_topup_request, get_pending_topup, get_user_language
+
+    # Одна открытая заявка на человека: иначе по двум почти одинаковым суммам
+    # станет невозможно понять, какое из пополнений оплатили.
+    existing = await get_pending_topup(user["id"])
+    if existing:
+        # Заявка уже есть. Молча подменять запрошенную сумму на старую нельзя:
+        # человек просил 500 000, получал в ответ 20 123, переводил 500 000 —
+        # и деньги не совпадали ни с чем. Говорим прямо и даём отменить.
+        return web.json_response({
+            "ok": False,
+            "error": "already_pending",
+            "expected": existing["expected_uzs"],
+            "card_number": config.PAYMENT_CARD_NUMBER,
+            "card_holder": config.PAYMENT_CARD_HOLDER,
+        }, status=409)
+    else:
+        created = await create_topup_request(
+            user["id"], amount, config.UNIQUE_AMOUNT_MAX_OFFSET
+        )
+
+    lang = await get_user_language(user["id"]) or "uz"
+    if lang not in ("uz", "ru", "en"):
+        lang = "uz"
+
+    # Дублируем в чат: там реквизиты не потеряются, когда витрина закроется.
+    try:
+        from services.i18n import t as _t
+        from services.prices import format_uzs as _fmt
+
+        await _bot.send_message(
+            user["id"],
+            _t(lang, "topup_created").format(
+                amount=_fmt(created["expected"]),
+                card=config.PAYMENT_CARD_NUMBER,
+                holder=config.PAYMENT_CARD_HOLDER,
+            ),
+        )
+    except Exception:
+        pass
+
+    return web.json_response({
+        "ok": True,
+        "expected": created["expected"],
+        "card_number": config.PAYMENT_CARD_NUMBER,
+        "card_holder": config.PAYMENT_CARD_HOLDER,
+    })
+
+
+async def handle_pay_from_balance(request: web.Request) -> web.Response:
+    """
+    Оплатить заказ с баланса.
+
+    Деньги уже у магазина, поэтому сверять нечего. Всё денежное —
+    проверка статуса, списание и перевод заказа в «оплачен» — делается ОДНОЙ
+    транзакцией в pay_order_from_balance: иначе двойной тап по кнопке
+    списывал деньги дважды и заказ выполнялся дважды за счёт магазина.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    blocked = await _banned_response(user["id"])
+    if blocked is not None:
+        return blocked
+
+    order_id = _order_id_from(body)
+    order = await get_order(order_id)
+    if not order or order["user_id"] != user["id"]:
+        return web.json_response({"error": "not_found"}, status=404)
+
+    from database.db import (
+        get_balance, get_user_language, pay_order_from_balance, refund_to_balance,
+    )
+
+    cart_id = order.get("cart_id")
+    if cart_id:
+        cart_orders = await get_cart_orders(cart_id)
+        price = sum(o["price_uzs"] for o in cart_orders)
+    else:
+        cart_orders = []
+        price = order["price_uzs"]
+
+    result = await pay_order_from_balance(order_id, user["id"], price, cart_id)
+    if result != "ok":
+        status = 409 if result == "busy" else 400
+        return web.json_response(
+            {"error": result, "balance": await get_balance(user["id"]), "need": price},
+            status=status,
+        )
+
+    left = await get_balance(user["id"])
+    label = f"корзина {cart_id}" if cart_id else f"заказ #{order_id}"
+    lang = await get_user_language(user["id"]) or "uz"
+    if lang not in ("uz", "ru", "en"):
+        lang = "uz"
+
+    from services.i18n import t as _t
+    from services.prices import format_uzs as _fmt
+
+    try:
+        await _bot.send_message(
+            user["id"],
+            _t(lang, "paid_from_balance").format(
+                order_id=order_id, amount=_fmt(price), balance=_fmt(left)
+            ),
+        )
+    except Exception:
+        pass
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await _bot.send_message(
+                admin_id,
+                f"💼✅ {label.capitalize()} оплачен С БАЛАНСА клиента "
+                f"<code>{user['id']}</code> на {_fmt(price)}. Остаток {_fmt(left)}.",
+            )
+        except Exception:
+            pass
+
+    # Дальше — общий путь выполнения. Если он сорвётся, деньги уже списаны,
+    # поэтому возвращаем их на баланс и зовём админа: молча забрать оплату и
+    # не выполнить заказ — худшее, что магазин может сделать.
+    from handlers.admin import finalize_payment, finalize_cart_payment
+
+    try:
+        if cart_id:
+            await finalize_cart_payment(_bot, cart_id, cart_orders)
+        else:
+            await finalize_payment(_bot, order_id, await get_order(order_id))
+    except Exception as e:
+        print(f"[BALANCE] выполнение {label} сорвалось после списания: {e}", flush=True)
+        try:
+            await refund_to_balance(
+                user["id"], price, f"Возврат: не удалось выполнить {label}", order_id
+            )
+        except Exception:
+            pass
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await _bot.send_message(
+                    admin_id,
+                    f"🛑 {label.capitalize()}: деньги списались, но выполнение "
+                    f"сорвалось ({e}). Я вернул {_fmt(price)} на баланс клиента "
+                    f"<code>{user['id']}</code>. Разберись вручную.",
+                )
+            except Exception:
+                pass
+        return web.json_response({"error": "fulfil_failed", "balance": await get_balance(user["id"])}, status=500)
+
+    return web.json_response({"ok": True, "balance": left})
+
+
+async def handle_cancel_topup(request: web.Request) -> web.Response:
+    """Отменить своё незакрытое пополнение, чтобы заказать другую сумму."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    from database.db import cancel_topup_request
+
+    await cancel_topup_request(user["id"])
+    return web.json_response({"ok": True})
+
+
 async def handle_cancel_order(request: web.Request) -> web.Response:
     """
     Отмена заказа самим клиентом из витрины.
@@ -939,6 +1173,10 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/submit_rent_link", handle_submit_rent_link)
     app.router.add_post("/public/send_rent_tutorial", handle_send_rent_tutorial)
     app.router.add_post("/public/send_display_video", handle_send_display_video)
+    app.router.add_post("/public/balance", handle_balance)
+    app.router.add_post("/public/create_topup", handle_create_topup)
+    app.router.add_post("/public/pay_from_balance", handle_pay_from_balance)
+    app.router.add_post("/public/cancel_topup", handle_cancel_topup)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
