@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS topup_requests (
     user_id    INTEGER NOT NULL,
     expected_uzs INTEGER NOT NULL,
     status     TEXT DEFAULT 'pending',
+    receipt_fp TEXT,
     credited_uzs INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -192,6 +193,7 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN language TEXT",
             "ALTER TABLE users ADD COLUMN balance_uzs INTEGER NOT NULL DEFAULT 0",
             "CREATE INDEX IF NOT EXISTS idx_topups_amount ON topup_requests(expected_uzs)",
+            "ALTER TABLE topup_requests ADD COLUMN receipt_fp TEXT",
             "ALTER TABLE users ADD COLUMN last_seen TEXT",
             "ALTER TABLE orders ADD COLUMN content_video_url TEXT",
             "ALTER TABLE orders ADD COLUMN content_text TEXT",
@@ -1097,10 +1099,10 @@ async def find_underpaid_orders(amount: int, max_gap: int, within_hours: int = 2
                   AND expected_amount_uzs IS NOT NULL
                   AND expected_amount_uzs > ?
                   AND expected_amount_uzs - ? <= ?
-                  AND created_at >= datetime('now', '-{hours} hours')
+                  AND created_at >= datetime('now', ?)
                 ORDER BY id DESC
-                LIMIT 5""".format(hours=int(within_hours)),
-            (*UNPAID_STATUSES, amount, amount, max_gap),
+                LIMIT 5""",
+            (*UNPAID_STATUSES, amount, amount, max_gap, f"-{int(within_hours)} hours"),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
 
@@ -1555,6 +1557,31 @@ async def find_topup_requests(amount: int, tolerance: int, hours: int = 24) -> l
             (amount, -TOPUP_OVERPAY_SLACK, tolerance, amount),
         ) as cur:
             return [dict(r) for r in await cur.fetchall()]
+
+
+async def find_topup_by_receipt(fingerprint: str, exclude_id: int | None = None) -> dict | None:
+    """Этот же чек уже присылали по другому пополнению?"""
+    if not fingerprint:
+        return None
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        query = "SELECT * FROM topup_requests WHERE receipt_fp = ?"
+        params: list = [fingerprint]
+        if exclude_id:
+            query += " AND id != ?"
+            params.append(exclude_id)
+        query += " ORDER BY id DESC LIMIT 1"
+        async with db.execute(query, params) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def set_topup_receipt(topup_id: int, fingerprint: str):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute(
+            "UPDATE topup_requests SET receipt_fp = ? WHERE id = ?", (fingerprint, topup_id)
+        )
+        await db.commit()
 
 
 async def close_topup_request(topup_id: int, credited: int) -> bool:

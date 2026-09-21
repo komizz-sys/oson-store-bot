@@ -16,6 +16,7 @@ from aiohttp import web
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
+import base64
 import config
 import re
 
@@ -519,6 +520,104 @@ async def handle_pay_from_balance(request: web.Request) -> web.Response:
         return web.json_response({"error": "fulfil_failed", "balance": await get_balance(user["id"])}, status=500)
 
     return web.json_response({"ok": True, "balance": left})
+
+
+async def handle_topup_receipt(request: web.Request) -> web.Response:
+    """
+    Чек о пополнении — и админ сам решает, сколько зачислить.
+
+    Зачем, если есть автозачисление по SMS: по одной сумме в SMS не видно,
+    КТО заплатил, а если SMS не дошла или банк написал её непривычно —
+    деньги просто висят, и разобраться не по чему. С чеком у владельца
+    всегда есть картинка и имя клиента рядом.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+
+    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+
+    blocked = await _banned_response(user["id"])
+    if blocked is not None:
+        return blocked
+
+    from database.db import (
+        get_pending_topup, find_topup_by_receipt, set_topup_receipt,
+    )
+
+    topup = await get_pending_topup(user["id"])
+    if not topup:
+        return web.json_response({"error": "no_topup"}, status=404)
+
+    image_b64 = body.get("image_base64") or ""
+    if not image_b64:
+        return web.json_response({"error": "no_image"}, status=400)
+    try:
+        raw = base64.b64decode(image_b64.split(",")[-1])
+    except Exception:
+        return web.json_response({"error": "bad_image"}, status=400)
+    if len(raw) > 8 * 1024 * 1024:
+        return web.json_response({"error": "too_big"}, status=400)
+
+    import hashlib
+
+    fingerprint = "sha256:" + hashlib.sha256(raw).hexdigest()
+    dup = await find_topup_by_receipt(fingerprint, exclude_id=topup["id"])
+    if dup:
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await _bot.send_message(
+                    admin_id,
+                    f"🔁 <b>Повторный чек на пополнение</b>\n\n"
+                    f"Клиент <code>{user['id']}</code> прислал чек, который уже "
+                    f"использовали (пополнение #{dup['id']}). Не зачисляю.",
+                )
+            except Exception:
+                pass
+        return web.json_response({"error": "duplicate_receipt"}, status=409)
+
+    await set_topup_receipt(topup["id"], fingerprint)
+
+    from aiogram.types import BufferedInputFile
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from services.prices import format_uzs as _fmt
+
+    who = f"@{user.get('username')}" if user.get("username") else f"id {user['id']}"
+    caption = (
+        f"💼 <b>Пополнение баланса — чек</b>\n\n"
+        f"От: {who} (<code>{user['id']}</code>)\n"
+        f"Просил пополнить на: <b>{_fmt(topup['expected_uzs'])}</b>\n\n"
+        "Сверь сумму на чеке. Банк удерживает комиссию, поэтому дойти могло "
+        "меньше — зачисляй то, что реально пришло."
+    )
+    b = InlineKeyboardBuilder()
+    b.button(
+        text=f"✅ Зачислить {_fmt(topup['expected_uzs'])}",
+        callback_data=f"topup:credit:{topup['id']}:{topup['expected_uzs']}",
+    )
+    b.button(text="✏️ Другая сумма", callback_data=f"topup:manual:{topup['id']}")
+    b.button(text="🚫 Отклонить", callback_data=f"topup:reject:{topup['id']}")
+    b.adjust(1)
+
+    sent_any = False
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await _bot.send_photo(
+                admin_id,
+                BufferedInputFile(raw, filename=f"topup_{topup['id']}.jpg"),
+                caption=caption,
+                reply_markup=b.as_markup(),
+            )
+            sent_any = True
+        except Exception as e:
+            print(f"[TOPUP] чек не ушёл админу {admin_id}: {e}", flush=True)
+
+    if not sent_any:
+        return web.json_response({"error": "send_failed"}, status=500)
+    return web.json_response({"ok": True})
 
 
 async def handle_cancel_topup(request: web.Request) -> web.Response:
@@ -1177,6 +1276,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/create_topup", handle_create_topup)
     app.router.add_post("/public/pay_from_balance", handle_pay_from_balance)
     app.router.add_post("/public/cancel_topup", handle_cancel_topup)
+    app.router.add_post("/public/topup_receipt", handle_topup_receipt)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
     for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",

@@ -30,6 +30,8 @@ import re
 
 from aiogram import Router, F, Bot
 from aiogram.dispatcher.event.bases import SkipHandler
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 import config
@@ -158,6 +160,98 @@ async def _ask_admin_which_match(bot: Bot, amount: int,
             await bot.send_message(admin_id, "\n".join(lines), reply_markup=b.as_markup())
         except Exception:
             pass
+
+
+class TopupAmountStates(StatesGroup):
+    waiting_amount = State()
+
+
+@router.callback_query(F.data.startswith("topup:manual:"))
+async def topup_ask_amount(call: CallbackQuery, state: FSMContext):
+    """Админ вводит сумму с чека руками — банк удержал комиссию и дошло меньше."""
+    if call.from_user.id not in config.ADMIN_IDS:
+        await call.answer("Только для админа", show_alert=True)
+        return
+
+    topup_id = int(call.data.split(":")[2])
+    from database.db import get_pending_topup_by_id
+
+    topup = await get_pending_topup_by_id(topup_id)
+    if not topup:
+        await call.answer("Эта заявка уже закрыта", show_alert=True)
+        return
+
+    await state.set_state(TopupAmountStates.waiting_amount)
+    await state.update_data(topup_id=topup_id)
+    await call.message.answer(
+        "Сколько реально пришло на карту? Напиши число.\n"
+        "Например: <code>4855</code>\n\n"
+        "Отменить — /cancel"
+    )
+    await call.answer()
+
+
+@router.message(TopupAmountStates.waiting_amount)
+async def topup_take_amount(message: Message, state: FSMContext, bot: Bot):
+    if message.from_user.id not in config.ADMIN_IDS:
+        return
+    text = (message.text or "").strip()
+    if text.startswith("/"):
+        await state.clear()
+        await message.answer("Отменено.")
+        return
+
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        await message.answer("Нужно число. Например: <code>4855</code>")
+        return
+    amount = int(digits)
+    if amount <= 0 or amount > 100_000_000:
+        await message.answer("Сумма выглядит странно. Напиши число ещё раз.")
+        return
+
+    data = await state.get_data()
+    await state.clear()
+
+    from database.db import get_pending_topup_by_id
+
+    topup = await get_pending_topup_by_id(int(data.get("topup_id") or 0))
+    if not topup:
+        await message.answer("Эта заявка уже закрыта — ничего не зачислил.")
+        return
+
+    await _credit_topup(bot, amount, topup)
+
+
+@router.callback_query(F.data.startswith("topup:reject:"))
+async def topup_reject(call: CallbackQuery, bot: Bot):
+    """Чек не тот или деньги не пришли — закрываем заявку без зачисления."""
+    if call.from_user.id not in config.ADMIN_IDS:
+        await call.answer("Только для админа", show_alert=True)
+        return
+
+    topup_id = int(call.data.split(":")[2])
+    from database.db import get_pending_topup_by_id, close_topup_request, get_user_language
+
+    topup = await get_pending_topup_by_id(topup_id)
+    if not topup:
+        await call.answer("Уже закрыта", show_alert=True)
+        return
+
+    await close_topup_request(topup_id, 0)
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await call.answer("Отклонено")
+
+    lang = await get_user_language(topup["user_id"]) or "uz"
+    if lang not in ("uz", "ru", "en"):
+        lang = "uz"
+    try:
+        await bot.send_message(topup["user_id"], t(lang, "topup_rejected"))
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("topup:credit:"))

@@ -106,6 +106,8 @@ TRANSLATIONS = {
             "do'kondagi xaridlar uchun ishlatiladi."
         ),
         "balance_title": "💼 <b>Balansingiz: {balance}</b>",
+        "topup_rejected": "⚠️ To'ldirish tasdiqlanmadi — pul kelmadi yoki chek mos emas.\n\nSavol bo'lsa /operator ga yozing.",
+        "topup_receipt_sent": "✅ Chek yuborildi. Tekshirib, balansingizga yozamiz.",
         "balance_empty": "Hozircha operatsiyalar yo'q.",
         "balance_topup_hint": "To'ldirish uchun do'konni oching → <b>Profil</b> → <b>Balansni to'ldirish</b>.",
         "paid_from_balance": (
@@ -262,6 +264,8 @@ TRANSLATIONS = {
             "в магазине."
         ),
         "balance_title": "💼 <b>Ваш баланс: {balance}</b>",
+        "topup_rejected": "⚠️ Пополнение не подтвердилось — деньги не поступили или чек не подошёл.\n\nЕсли вы платили, напишите /operator.",
+        "topup_receipt_sent": "✅ Чек отправлен. Проверим и зачислим на баланс.",
         "balance_empty": "Операций пока нет.",
         "balance_topup_hint": "Чтобы пополнить — откройте магазин → <b>Профиль</b> → <b>Пополнить баланс</b>.",
         "paid_from_balance": (
@@ -417,6 +421,8 @@ TRANSLATIONS = {
             "in this shop."
         ),
         "balance_title": "💼 <b>Your balance: {balance}</b>",
+        "topup_rejected": "⚠️ The top-up was not confirmed — the money didn't arrive or the receipt didn't match.\n\nIf you did pay, contact /operator.",
+        "topup_receipt_sent": "✅ Receipt sent. We'll check it and credit your balance.",
         "balance_empty": "No transactions yet.",
         "balance_topup_hint": "To top up — open the shop → <b>Profile</b> → <b>Top up balance</b>.",
         "paid_from_balance": (
