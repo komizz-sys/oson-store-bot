@@ -18,6 +18,8 @@ from aiogram.fsm.storage.base import StorageKey
 
 import base64
 import config
+import gzip
+import logging
 import re
 
 from database.db import (
@@ -1227,6 +1229,72 @@ async def handle_diag(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+# --------------------------------------------------------------------------
+# Анимированные (премиальные) эмодзи Telegram в витрине
+# --------------------------------------------------------------------------
+# В Telegram премиальный эмодзи — это не символ, а id вроде 5375583215157280942.
+# В сообщении бот умеет его показать (<tg-emoji emoji-id=...>), а мини-апп —
+# обычная веб-страница: браузер про такой id ничего не знает и покажет пустоту.
+#
+# Зато у бота есть доступ к самому файлу эмодзи: getCustomEmojiStickers отдаёт
+# по id стикер, а его уже можно скачать и раздать витрине как обычный файл.
+# Именно это здесь и происходит.
+#
+# Файл весит килобайты и никогда не меняется, поэтому держим копию в памяти и
+# отдаём с длинным Cache-Control: у Telegram качаем один раз за перезапуск.
+_EMOJI_CACHE: dict = {}
+
+
+async def handle_custom_emoji(request: web.Request) -> web.Response:
+    emoji_id = request.match_info.get("emoji_id", "")
+    # Только цифры: id уходит в запрос к Telegram, и пускать туда произвольную
+    # строку из интернета незачем.
+    if not emoji_id.isdigit() or len(emoji_id) > 24:
+        return web.Response(status=404, text="bad emoji id")
+
+    cached = _EMOJI_CACHE.get(emoji_id)
+    if cached is None:
+        try:
+            stickers = await _bot.get_custom_emoji_stickers([emoji_id])
+        except Exception as e:
+            logging.warning(f"Не удалось получить эмодзи {emoji_id}: {e}")
+            return web.Response(status=404, text="not found")
+        if not stickers:
+            return web.Response(status=404, text="not found")
+        sticker = stickers[0]
+        try:
+            file = await _bot.get_file(sticker.file_id)
+            buf = await _bot.download_file(file.file_path)
+            raw = buf.read()
+        except Exception as e:
+            logging.warning(f"Не удалось скачать эмодзи {emoji_id}: {e}")
+            return web.Response(status=404, text="download failed")
+
+        if getattr(sticker, "is_animated", False):
+            # .tgs — это gzip поверх Lottie-JSON. Распаковываем здесь, чтобы
+            # витрине не тащить ещё и распаковщик в браузер.
+            try:
+                raw = gzip.decompress(raw)
+            except Exception:
+                pass
+            ctype = "application/json"
+        elif getattr(sticker, "is_video", False):
+            ctype = "video/webm"
+        else:
+            ctype = "image/webp"
+        cached = (raw, ctype)
+        _EMOJI_CACHE[emoji_id] = cached
+
+    body, ctype = cached
+    # Тип витрина определяет по Content-Type ответа — отдельного запроса за
+    # "а что это за файл" не нужно.
+    return web.Response(
+        body=body,
+        content_type=ctype,
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 async def handle_preflight(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
@@ -1261,6 +1329,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/my_orders", handle_my_orders)
     app.router.add_post("/public/my_stats", handle_my_stats)
     app.router.add_get("/public/leaderboard", handle_leaderboard)
+    app.router.add_get("/public/emoji/{emoji_id}", handle_custom_emoji)
     app.router.add_post("/public/_diag", handle_diag)
     app.router.add_post("/public/create_order", handle_create_order)
     app.router.add_post("/public/create_cart_order", handle_create_cart_order)
