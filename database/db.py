@@ -773,37 +773,79 @@ async def get_user_spend_stats(user_id: int) -> dict:
     }
 
 
-async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
-    """
-    Топ клиентов по сумме трат (для вкладки "TOP"). since_sql=None — за всё время.
-    -> [{"user_id": int, "username": str|None, "full_name": str|None,
-         "total_uzs": int, "orders_count": int}]
-    """
-    status_placeholders = ",".join("?" for _ in PAID_STATUSES)
-    where = f"o.status IN ({status_placeholders})"
+def _leaderboard_where(since_sql: str | None) -> tuple[str, list]:
+    """Одно условие на топ и на «моё место» — чтобы цифры не разъезжались."""
+    where = f"o.status IN ({','.join('?' for _ in PAID_STATUSES)})"
     params: list = list(PAID_STATUSES)
     if since_sql:
         where += " AND o.created_at >= ?"
         params.append(since_sql)
     # Скрытые вручную аккаунты (см. /hidetop) в публичный рейтинг не попадают
     where += " AND o.user_id NOT IN (SELECT user_id FROM leaderboard_hidden)"
-    params.append(limit)
+    return where, params
 
+
+async def get_leaderboard(since_sql: str | None, limit: int = 20) -> list[dict]:
+    """
+    Топ клиентов по сумме трат (для вкладки "TOP"). since_sql=None — за всё время.
+    -> [{"user_id", "username", "full_name", "total_uzs", "orders_count",
+         "stars", "gifts", "premium", "rents"}]
+    stars — сколько звёзд куплено (у заказа звёзд quantity = число звёзд),
+    gifts — сколько подарков, premium/rents — сколько таких заказов.
+    """
+    where, params = _leaderboard_where(since_sql)
+    params.append(limit)
     async with aiosqlite.connect(config.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             f"""SELECT o.user_id, u.username, u.full_name,
-                       SUM(o.price_uzs) AS total_uzs, COUNT(*) AS orders_count
+                       SUM(o.price_uzs) AS total_uzs, COUNT(*) AS orders_count,
+                       SUM(CASE WHEN o.category = 'stars' THEN COALESCE(o.quantity, 0) ELSE 0 END) AS stars,
+                       SUM(CASE WHEN o.category = 'simple_gift' THEN COALESCE(o.quantity, 1) ELSE 0 END) AS gifts,
+                       SUM(CASE WHEN o.category = 'premium' THEN 1 ELSE 0 END) AS premium,
+                       SUM(CASE WHEN o.category = 'nft_rent' THEN 1 ELSE 0 END) AS rents
                 FROM orders o
                 LEFT JOIN users u ON u.user_id = o.user_id
                 WHERE {where}
                 GROUP BY o.user_id
-                ORDER BY total_uzs DESC
+                ORDER BY total_uzs DESC, MIN(o.id) ASC
                 LIMIT ?""",
             params,
         ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_leaderboard_position(since_sql: str | None, user_id: int | None) -> dict:
+    """
+    Сколько всего людей в рейтинге за период и где в нём этот клиент.
+    -> {"total_people": int, "rank": int|None, "total_uzs": int,
+        "next_total_uzs": int|None}  — next_total_uzs у того, кто на место выше.
+    Порядок тот же, что в get_leaderboard, иначе «ваше место» не совпадёт
+    с тем, что человек видит в списке.
+    """
+    where, params = _leaderboard_where(since_sql)
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            f"""SELECT o.user_id, SUM(o.price_uzs) AS total
+                FROM orders o
+                WHERE {where}
+                GROUP BY o.user_id
+                ORDER BY total DESC, MIN(o.id) ASC""",
+            params,
+        ) as cur:
             rows = await cur.fetchall()
-            return [dict(r) for r in rows]
+
+    out = {"total_people": len(rows), "rank": None, "total_uzs": 0, "next_total_uzs": None}
+    if user_id is None:
+        return out
+    for i, (uid, total) in enumerate(rows):
+        if uid == user_id:
+            out["rank"] = i + 1
+            out["total_uzs"] = int(total or 0)
+            if i > 0:
+                out["next_total_uzs"] = int(rows[i - 1][1] or 0)
+            break
+    return out
 
 
 # ---- Корзина: несколько товаров, одна оплата ----

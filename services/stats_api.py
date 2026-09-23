@@ -24,6 +24,7 @@ import re
 
 from database.db import (
     get_revenue_stats, get_user_orders, get_user_spend_stats, get_leaderboard,
+    get_leaderboard_position,
     get_pending_rent_link_order, set_rent_link, get_order, set_order_status,
     attach_payment_proof, get_cart_orders, set_cart_status, attach_cart_payment_proof,
     find_order_by_receipt, set_receipt_fingerprint, set_cart_receipt_fingerprint,
@@ -886,8 +887,85 @@ async def handle_leaderboard(request: web.Request) -> web.Response:
         return web.json_response({"error": f"unknown period, expected one of {list(PERIOD_TO_SQL)}"}, status=400)
 
     since_sql = await _period_since_sql(period)
-    rows = await get_leaderboard(since_sql, limit=20)
-    return web.json_response({"leaderboard": rows, "period": period})
+    rows = await get_leaderboard(since_sql, limit=TOP_SIZE)
+    pos = await get_leaderboard_position(since_sql, None)
+    # Аватарки отдаём только тем, кто сейчас в топе — см. handle_avatar.
+    _TOP_USER_IDS.update(r["user_id"] for r in rows)
+    return web.json_response({
+        "leaderboard": rows, "period": period, "total_people": pos["total_people"],
+    })
+
+
+async def handle_leaderboard_me(request: web.Request) -> web.Response:
+    """
+    «Где я в рейтинге» за выбранный период — для полоски внизу вкладки TOP.
+    Только по подписанной initData: чужое место так не подсмотреть.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+    user = _extract_verified_user(body)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+    period = body.get("period", "all")
+    if period not in PERIOD_TO_SQL:
+        period = "all"
+    since_sql = await _period_since_sql(period)
+    pos = await get_leaderboard_position(since_sql, user["id"])
+    return web.json_response({"ok": True, "top_size": TOP_SIZE, **pos})
+
+
+# --------------------------------------------------------------------------
+# Аватарки для вкладки TOP
+# --------------------------------------------------------------------------
+# Фото профиля бот может взять у Telegram (getUserProfilePhotos). Но открытый
+# эндпоинт «дай фото любого user_id» превратил бы бот в прокси для чужих
+# аватарок. Поэтому отдаём фото ТОЛЬКО тем, кто сейчас показан в топе, —
+# их имена и так видны всем на этой вкладке.
+TOP_SIZE = 8
+_TOP_USER_IDS: set = set()
+_AVATAR_CACHE: dict = {}          # user_id -> (время, байты | None)
+_AVATAR_TTL = 6 * 60 * 60
+_AVATAR_CACHE_MAX = 300
+
+
+async def handle_avatar(request: web.Request) -> web.Response:
+    import time
+    raw_id = request.match_info.get("user_id", "")
+    if not raw_id.isdigit() or len(raw_id) > 20:
+        return web.Response(status=404)
+    user_id = int(raw_id)
+    if user_id not in _TOP_USER_IDS:
+        return web.Response(status=404)
+
+    now = time.time()
+    cached = _AVATAR_CACHE.get(user_id)
+    if cached is None or now - cached[0] > _AVATAR_TTL:
+        body = None
+        try:
+            photos = await _bot.get_user_profile_photos(user_id, limit=1)
+            if photos and photos.total_count and photos.photos:
+                sizes = photos.photos[0]
+                # Самый маленький размер не меньше 160px — хватает на аватарку
+                # и не качаем мегабайтное оригинальное фото.
+                pick = next((ph for ph in sizes if ph.width >= 160), sizes[-1])
+                file = await _bot.get_file(pick.file_id)
+                buf = await _bot.download_file(file.file_path)
+                body = buf.read()
+        except Exception as e:
+            logging.info(f"Аватар {user_id} недоступен: {e}")
+            body = None
+        if len(_AVATAR_CACHE) >= _AVATAR_CACHE_MAX:
+            _AVATAR_CACHE.clear()
+        # Запоминаем и «фото нет» — иначе без фото дёргали бы Telegram каждый раз.
+        cached = (now, body)
+        _AVATAR_CACHE[user_id] = cached
+
+    if not cached[1]:
+        return web.Response(status=404)
+    return web.Response(body=cached[1], content_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=21600"})
 
 
 # Лимит висящих заказов на клиента живёт в services/order_processing —
@@ -1329,6 +1407,8 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/my_orders", handle_my_orders)
     app.router.add_post("/public/my_stats", handle_my_stats)
     app.router.add_get("/public/leaderboard", handle_leaderboard)
+    app.router.add_post("/public/leaderboard_me", handle_leaderboard_me)
+    app.router.add_get("/public/avatar/{user_id}", handle_avatar)
     app.router.add_get("/public/emoji/{emoji_id}", handle_custom_emoji)
     app.router.add_post("/public/_diag", handle_diag)
     app.router.add_post("/public/create_order", handle_create_order)
@@ -1348,7 +1428,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/topup_receipt", handle_topup_receipt)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
-    for path in ("/public/my_orders", "/public/my_stats", "/public/_diag", "/public/create_order",
+    for path in ("/public/my_orders", "/public/my_stats", "/public/leaderboard_me", "/public/_diag", "/public/create_order",
                  "/public/create_cart_order", "/public/my_rentals",
                  "/public/place_order", "/public/place_cart_order", "/public/order_status",
                  "/public/active_order", "/public/submit_rent_link", "/public/cancel_order", "/public/submit_receipt"):
