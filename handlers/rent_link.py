@@ -18,8 +18,8 @@ from aiogram import Router, F, Bot
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.types import CallbackQuery, Message
 
-from database.db import get_pending_rent_link_order, set_rent_link, get_user_language
-from services.rent_connect import connect_rent_link
+from database.db import get_user_language
+from services.rent_connect import submit_rent_link
 
 router = Router()
 
@@ -40,16 +40,10 @@ async def receive_rent_link(message: Message, bot: Bot):
     if not _LINK_RE.match(link):
         raise SkipHandler  # не похоже на ссылку — не наш случай
 
-    order = await get_pending_rent_link_order(message.from_user.id)
-    if not order:
-        raise SkipHandler  # не наш случай — пусть сообщение обработает другой хендлер
-
-    await set_rent_link(order["id"], link)
-
-    # Само подключение (и повторы при неудаче) живёт в services/rent_connect.py —
-    # общем для этого обработчика и для витрины, чтобы клиент получал одни и те
-    # же сообщения независимо от того, куда он прислал ссылку.
-    await connect_rent_link(bot, order, link)
+    # Первая ссылка или новая взамен умершей — решает submit_rent_link.
+    result = await submit_rent_link(bot, message.from_user.id, link)
+    if result is None:
+        raise SkipHandler  # нет подходящего заказа аренды — ссылка не нам
 
 
 @router.callback_query(F.data == "rent:displayhelp")

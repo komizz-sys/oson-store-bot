@@ -1449,7 +1449,17 @@ async def retry_rent_connect(call: CallbackQuery, bot: Bot):
     from services.rent_connect import announce_success, attempt_connect, explain_error
 
     ok, err = await attempt_connect(bot, order, link)
-    if ok:
+    if ok and order.get("status") == "completed":
+        # Переподключение по новой ссылке после «готово»: заказ уже закрыт,
+        # второй раз в канал не пишем — только говорим клиенту.
+        from services.rent_connect import RECONNECTED, RECONNECT_HINT, _lang_fallback
+        lang = _lang_fallback(await _get_user_language(order["user_id"]))
+        try:
+            await bot.send_message(order["user_id"], RECONNECTED[lang] + RECONNECT_HINT[lang])
+        except Exception:
+            pass
+        await _append_note(call, f"\n\n✅ Переподключено (заказ #{order_id})")
+    elif ok:
         # Тот же путь, что и у автоматического подключения: клиенту сообщение,
         # заказ закрывается как выполненный, запись в канал и в ленту.
         await announce_success(bot, order, " (вручную по кнопке)")

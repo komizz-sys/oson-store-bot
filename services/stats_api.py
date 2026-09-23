@@ -207,24 +207,19 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
     if not _RENT_LINK_RE.match(link):
         return web.json_response({"error": "bad_link"}, status=400)
 
-    order = await get_pending_rent_link_order(user["id"])
-    if not order:
+    from services.rent_connect import submit_rent_link
+
+    # Первая ссылка — обычное подключение; новая взамен умершей (Android
+    # перезагрузил вкладку Fragment) — переподключение. Логика общая с чатом.
+    result = await submit_rent_link(_bot, user["id"], link, announce_start=False)
+    if result is None:
         return web.json_response({"error": "no_pending_order"}, status=400)
-
-    await set_rent_link(order["id"], link)
-
-    # Подключение и повторы — общий код с обработчиком ссылки из чата
-    # (services/rent_connect.py). Ответ витрине зависит от того, получилось ли
-    # подключить СРАЗУ: если нет — это почти всегда «админ ещё не подтвердил
-    # ton://-перевод», бот дожмёт сам за несколько минут, и витрине надо
-    # сказать «ждём», а не «ошибка».
-    from services.rent_connect import connect_rent_link
-
-    connected = await connect_rent_link(_bot, order, link, announce_start=False)
+    order = result["order"]
     return web.json_response({
         "ok": True,
-        "connected": connected,
-        "pending": not connected,
+        "connected": result["connected"],
+        "pending": not result["connected"],
+        "reconnect": result["reconnect"],
         "item_name": order["item_name"],
         "order_id": order["id"],
     })
@@ -1249,11 +1244,17 @@ async def handle_order_status(request: web.Request) -> web.Response:
         None,
     )
 
+    reviewed = None
+    if status == "completed":
+        from database.db import get_review
+        reviewed = (await get_review(main["id"])) is not None
+
     return web.json_response({
         "ok": True,
         "order_id": main["id"],
         "cart_id": cart_id or main.get("cart_id"),
         "status": status,
+        "reviewed": reviewed,
         "category": main["category"],
         "item_name": main["item_name"],
         "recipient": main["recipient"],
@@ -1373,6 +1374,45 @@ async def handle_custom_emoji(request: web.Request) -> web.Response:
     )
 
 
+# --------------------------------------------------------------------------
+# Отзывы
+# --------------------------------------------------------------------------
+_REVIEWS_CACHE: dict = {"at": 0.0, "data": None}
+
+
+async def handle_submit_review(request: web.Request) -> web.Response:
+    """Оценка из витрины (экран «Bajarildi»). Общая логика — services/reviews.py."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+    user = _extract_verified_user(body)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+    blocked = await _banned_response(user["id"])
+    if blocked is not None:
+        return blocked
+
+    from services.reviews import submit_review
+    result, _ = await submit_review(_bot, _order_id_from(body), user["id"],
+                                    body.get("rating"), body.get("comment"))
+    if result != "ok":
+        return web.json_response({"ok": False, "error": result}, status=400)
+    _REVIEWS_CACHE["at"] = 0.0  # новый отзыв сразу виден в ленте
+    return web.json_response({"ok": True})
+
+
+async def handle_reviews(request: web.Request) -> web.Response:
+    """Средняя оценка и свежие отзывы для витрины. Кэш на минуту."""
+    import time
+    from database.db import get_reviews_summary
+    now = time.time()
+    if _REVIEWS_CACHE["data"] is None or now - _REVIEWS_CACHE["at"] > 60:
+        _REVIEWS_CACHE["data"] = await get_reviews_summary(limit=30)
+        _REVIEWS_CACHE["at"] = now
+    return web.json_response(_REVIEWS_CACHE["data"])
+
+
 async def handle_preflight(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
@@ -1407,6 +1447,8 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/my_orders", handle_my_orders)
     app.router.add_post("/public/my_stats", handle_my_stats)
     app.router.add_get("/public/leaderboard", handle_leaderboard)
+    app.router.add_post("/public/review", handle_submit_review)
+    app.router.add_get("/public/reviews", handle_reviews)
     app.router.add_post("/public/leaderboard_me", handle_leaderboard_me)
     app.router.add_get("/public/avatar/{user_id}", handle_avatar)
     app.router.add_get("/public/emoji/{emoji_id}", handle_custom_emoji)
@@ -1428,7 +1470,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/topup_receipt", handle_topup_receipt)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
-    for path in ("/public/my_orders", "/public/my_stats", "/public/leaderboard_me", "/public/_diag", "/public/create_order",
+    for path in ("/public/my_orders", "/public/my_stats", "/public/leaderboard_me", "/public/review", "/public/_diag", "/public/create_order",
                  "/public/create_cart_order", "/public/my_rentals",
                  "/public/place_order", "/public/place_cart_order", "/public/order_status",
                  "/public/active_order", "/public/submit_rent_link", "/public/cancel_order", "/public/submit_receipt"):

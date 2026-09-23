@@ -137,6 +137,22 @@ CREATE TABLE IF NOT EXISTS balance_txns (
 # сумму с уникальным хвостом. По ней и опознаём поступление — SMS от банка
 # сообщает сумму, но не отправителя, и другого способа понять, чей это
 # перевод, у нас нет.
+# Отзывы о заказах. Один отзыв на заказ; у корзины отзыв один на всю
+# корзину и привязан к её первому товару (order_id = минимальный id корзины).
+CREATE_REVIEWS_TABLE = """
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL UNIQUE,
+    cart_id TEXT,
+    user_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    channel_msg_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
 CREATE_TOPUP_REQUESTS_TABLE = """
 CREATE TABLE IF NOT EXISTS topup_requests (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,6 +204,7 @@ async def init_db():
         await db.execute(CREATE_BALANCE_TXNS_TABLE)
         await db.execute(CREATE_TOPUP_REQUESTS_TABLE)
         await db.execute(CREATE_PENDING_TOPUPS_TABLE)
+        await db.execute(CREATE_REVIEWS_TABLE)
         # Миграции для баз, созданных до появления этих полей/таблиц
         for stmt in (
             "ALTER TABLE users ADD COLUMN language TEXT",
@@ -217,6 +234,14 @@ async def init_db():
                 await db.execute(stmt)
             except Exception:
                 pass  # уже есть
+        # Пометка «оценку уже просили». Колонка новая — и ВСЕ старые заказы
+        # сразу помечаем как спрошенные: иначе после деплоя бот разом написал
+        # бы «оцените заказ» каждому, кто когда-либо у тебя покупал.
+        try:
+            await db.execute("ALTER TABLE orders ADD COLUMN review_asked INTEGER DEFAULT 0")
+            await db.execute("UPDATE orders SET review_asked = 1")
+        except Exception:
+            pass  # колонка уже была — старые заказы помечены в прошлый раз
         await db.commit()
 
 
@@ -699,6 +724,32 @@ async def get_pending_rent_link_order(user_id: int) -> dict | None:
                  AND (rent_link IS NULL OR rent_link = '')
                ORDER BY id DESC LIMIT 1""",
             (user_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def get_reconnectable_rent_order(user_id: int, within_hours: int = 48) -> dict | None:
+    """
+    Свежий заказ аренды, по которому ссылка УЖЕ была, но клиент прислал новую.
+
+    Зачем. MarketApp отвечает «подключено», как только отправил подтверждение
+    на страницу Fragment, — но не знает, дошло ли оно. На Android вкладка
+    Fragment часто перезагружается, пока человек бегает в бот, и старая ссылка
+    умирает: бот пишет «готово», а на Fragment пусто. Лечится свежей ссылкой.
+    Раньше вторую ссылку бот игнорировал, и владелец подключал руками.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT * FROM orders
+               WHERE user_id = ? AND category = 'nft_rent'
+                 AND status IN ('paid', 'fulfilling', 'completed')
+                 AND rent_link IS NOT NULL AND rent_link != ''
+                 AND COALESCE(is_extension, 0) = 0
+                 AND created_at >= datetime('now', ?)
+               ORDER BY id DESC LIMIT 1""",
+            (user_id, f"-{int(within_hours)} hours"),
         ) as cur:
             row = await cur.fetchone()
             return dict(row) if row else None
@@ -1756,6 +1807,160 @@ async def find_expired_order_by_amount(amount: int, hours: int = 24) -> dict | N
                   AND created_at >= datetime('now', '-{int(hours)} hours')
                 ORDER BY id DESC LIMIT 1""",
             (amount,),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+# ---- Отзывы ----
+
+async def review_key_order(order: dict) -> int:
+    """
+    К какому заказу привязан отзыв: у одиночного — он сам, у корзины — её
+    первый товар. Так на корзину из пяти товаров отзыв один, а не пять.
+    """
+    if not order.get("cart_id"):
+        return order["id"]
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute("SELECT MIN(id) FROM orders WHERE cart_id = ?", (order["cart_id"],)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row and row[0] else order["id"]
+
+
+async def get_review(order_id: int) -> dict | None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM reviews WHERE order_id = ?", (order_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def add_review(order_id: int, cart_id: str | None, user_id: int, rating: int,
+                     comment: str | None) -> dict | None:
+    """
+    Сохранить отзыв. -> сам отзыв, или None, если на этот заказ отзыв уже есть
+    (UNIQUE не даст оставить второй — ни двойным нажатием, ни из витрины и
+    чата одновременно).
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute(
+            """INSERT OR IGNORE INTO reviews (order_id, cart_id, user_id, rating, comment)
+               VALUES (?, ?, ?, ?, ?)""",
+            (order_id, cart_id, user_id, rating, comment),
+        )
+        if cur.rowcount != 1:
+            await db.commit()
+            return None
+        # Раз отзыв есть — просить оценку в чате больше не нужно.
+        if cart_id:
+            await db.execute("UPDATE orders SET review_asked = 1 WHERE cart_id = ?", (cart_id,))
+        else:
+            await db.execute("UPDATE orders SET review_asked = 1 WHERE id = ?", (order_id,))
+        await db.commit()
+    return await get_review(order_id)
+
+
+async def set_review_comment(order_id: int, comment: str) -> bool:
+    """Дописать комментарий к уже поставленной оценке (только если его ещё нет)."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE reviews SET comment = ? WHERE order_id = ? AND (comment IS NULL OR comment = '')",
+            (comment, order_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def set_review_channel_msg(order_id: int, msg_id: int) -> None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("UPDATE reviews SET channel_msg_id = ? WHERE order_id = ?", (msg_id, order_id))
+        await db.commit()
+
+
+async def set_review_hidden(order_id: int, hidden: bool) -> dict | None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("UPDATE reviews SET hidden = ? WHERE order_id = ?", (1 if hidden else 0, order_id))
+        await db.commit()
+    return await get_review(order_id)
+
+
+async def get_orders_to_ask_review(within_hours: int = 48, limit: int = 20) -> list[dict]:
+    """
+    Выполненные заказы, по которым ещё не просили оценку. Корзина — одной
+    строкой (её первый товар). Окно по времени — страховка, чтобы бот никогда
+    не начал рассылать просьбы по давно забытым заказам.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT o.* FROM orders o
+               WHERE o.status = 'completed'
+                 AND COALESCE(o.review_asked, 0) = 0
+                 AND o.created_at >= datetime('now', ?)
+                 AND (o.cart_id IS NULL OR o.id = (SELECT MIN(id) FROM orders c WHERE c.cart_id = o.cart_id))
+                 AND NOT EXISTS (SELECT 1 FROM orders c
+                                 WHERE o.cart_id IS NOT NULL AND c.cart_id = o.cart_id AND c.status != 'completed')
+               ORDER BY o.id LIMIT ?""",
+            (f"-{int(within_hours)} hours", limit),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def mark_review_asked(order: dict) -> None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        if order.get("cart_id"):
+            await db.execute("UPDATE orders SET review_asked = 1 WHERE cart_id = ?", (order["cart_id"],))
+        else:
+            await db.execute("UPDATE orders SET review_asked = 1 WHERE id = ?", (order["id"],))
+        await db.commit()
+
+
+async def get_reviews_summary(limit: int = 20) -> dict:
+    """
+    Для витрины: средняя оценка, сколько всего, и свежие отзывы.
+    Скрытые (спам/мат) не считаются нигде. Имя — только первое слово имени,
+    без @username: отзыв публичный, светить аккаунт клиента незачем.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*), AVG(rating) FROM reviews WHERE hidden = 0"
+        ) as cur:
+            count, avg = await cur.fetchone()
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT r.order_id, r.rating, r.comment, r.created_at,
+                      u.full_name, o.item_name, o.category,
+                      (SELECT COUNT(*) FROM orders c WHERE r.cart_id IS NOT NULL AND c.cart_id = r.cart_id) AS cart_size
+               FROM reviews r
+               LEFT JOIN users u ON u.user_id = r.user_id
+               LEFT JOIN orders o ON o.id = r.order_id
+               WHERE r.hidden = 0
+               ORDER BY (r.comment IS NOT NULL AND r.comment != '') DESC, r.id DESC
+               LIMIT ?""",
+            (limit,),
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    items = []
+    for r in rows:
+        first = ((r.get("full_name") or "").strip().split() or ["Mijoz"])[0][:24]
+        items.append({
+            "rating": r["rating"],
+            "comment": r.get("comment") or "",
+            "name": first,
+            "item": r.get("item_name") or "",
+            "category": r.get("category") or "",
+            "cart_size": r.get("cart_size") or 0,
+            "created_at": r.get("created_at"),
+        })
+    return {"count": count or 0, "avg": round(avg, 2) if avg else None, "items": items}
+
+
+async def get_user(user_id: int) -> dict | None:
+    """Строка пользователя (username, full_name) — для подписи отзывов."""
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user_id, username, full_name FROM users WHERE user_id = ?", (user_id,)
         ) as cur:
             row = await cur.fetchone()
             return dict(row) if row else None

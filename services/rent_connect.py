@@ -44,6 +44,13 @@ _lang_fallback = lambda v: v if v in ("uz", "ru", "en") else "uz"
 # и без этого сборщик мусора может убить повтор посреди ожидания — подключение
 # молча не случится, а понять причину будет почти невозможно.
 _RETRY_TASKS: set[asyncio.Task] = set()
+# Какой заказ уже крутит повторы. Второй цикл на тот же заказ не нужен:
+# если клиент прислал новую ссылку, идущий цикл подхватит её сам.
+_RETRY_BY_ORDER: dict[int, asyncio.Task] = {}
+# Когда по заказу последний раз была попытка переподключения — защита от
+# того, что человек жмёт «отправить» пять раз подряд.
+_LAST_RECONNECT: dict[int, float] = {}
+RECONNECT_COOLDOWN = 15  # секунд
 
 CONNECTING = {
     "uz": "⏳ Havolangiz qabul qilindi, sovg'ani ulayapman...",
@@ -127,9 +134,42 @@ def display_help_kb(lang: str):
 # Первая неудача — НЕ повод пугать клиента: почти всегда это «админ ещё не
 # подтвердил перевод». Поэтому текст спокойный и без слова «ошибка».
 PENDING = {
-    "uz": "⏳ Havola saqlandi. Sovg'a bir necha daqiqada ulanadi — tayyor bo'lgach xabar beramiz.",
-    "ru": "⏳ Ссылка сохранена. Подарок подключится в течение нескольких минут — как будет готово, напишем.",
-    "en": "⏳ Link saved. The gift will be connected within a few minutes — we'll message you when it's done.",
+    "uz": ("⏳ Havola saqlandi. Sovg'a bir necha daqiqada ulanadi — tayyor bo'lgach xabar beramiz.\n\n"
+           "❗️ Fragment sahifasini <b>yopmang va yangilamang</b> — ulanish aynan o'sha sahifada ko'rinadi."),
+    "ru": ("⏳ Ссылка сохранена. Подарок подключится в течение нескольких минут — как будет готово, напишем.\n\n"
+           "❗️ <b>Не закрывайте и не обновляйте</b> страницу Fragment — подключение появится именно на ней."),
+    "en": ("⏳ Link saved. The gift will be connected within a few minutes — we'll message you when it's done.\n\n"
+           "❗️ <b>Don't close or refresh</b> the Fragment page — the connection shows up on that exact page."),
+}
+
+# Подсказка «не подключилось на Fragment — пришли новую ссылку». Ставится под
+# сообщением об успехе: бот не может проверить, поймала ли страница Fragment
+# подтверждение (см. get_reconnectable_rent_order), так что честно говорим,
+# что делать, если нет.
+RECONNECT_HINT = {
+    "uz": "\n\n🔄 Fragment'da ulanmagan bo'lsa — u yerda <b>yangi havola</b> oling va shu yerga yuboring, qayta ulayman.",
+    "ru": "\n\n🔄 Если на Fragment не подключилось — возьмите там <b>новую ссылку</b> и пришлите сюда, переподключу.",
+    "en": "\n\n🔄 If it didn't connect on Fragment — get a <b>new link</b> there and send it here, I'll reconnect.",
+}
+RECONNECTING = {
+    "uz": "🔄 Yangi havolani oldim, qayta ulayapman... Fragment sahifasini yopmang.",
+    "ru": "🔄 Получил новую ссылку, переподключаю... Не закрывайте страницу Fragment.",
+    "en": "🔄 Got the new link, reconnecting... Keep the Fragment page open.",
+}
+RECONNECTED = {
+    "uz": "✅ Qayta ulandi! Fragment sahifasiga qarang.",
+    "ru": "✅ Переподключил! Посмотрите на страницу Fragment.",
+    "en": "✅ Reconnected! Check the Fragment page.",
+}
+RECONNECT_FAILED = {
+    "uz": "⚠️ Qayta ulab bo'lmadi. Operator tekshiradi — yoki bir daqiqadan keyin yana yangi havola yuboring.",
+    "ru": "⚠️ Переподключить не вышло. Оператор проверит — или пришлите новую ссылку ещё раз через минуту.",
+    "en": "⚠️ Couldn't reconnect. An operator will check — or send a new link again in a minute.",
+}
+RECONNECT_SLOW_DOWN = {
+    "uz": "⏳ Havola hozirgina yuborildi — bir oz kuting.",
+    "ru": "⏳ Ссылку только что прислали — подождите немного.",
+    "en": "⏳ A link was just sent — please wait a moment.",
 }
 # Все попытки исчерпаны — вот тут уже зовём оператора. Просим и свежую ссылку:
 # tc://-ссылки Fragment живут недолго и к этому моменту могли протухнуть.
@@ -214,7 +254,7 @@ async def announce_success(bot: Bot, order: dict, attempt_note: str = "") -> Non
         # Имя подарка приходит из MarketApp и может содержать символы, которые
         # Telegram примет за HTML («&», «<»). Тогда сообщение не отправится
         # вообще, и клиент решит, что его кинули. Экранируем.
-        SUCCESS[lang].format(item=html.escape(order["item_name"] or "")),
+        SUCCESS[lang].format(item=html.escape(order["item_name"] or "")) + RECONNECT_HINT[lang],
         reply_markup=display_help_kb(lang),
     )
     await _complete_order(bot, order)
@@ -248,6 +288,9 @@ async def _retry_loop(bot: Bot, order_id: int, link: str) -> None:
         if not order:
             return  # подключили вручную или заказ закрыли — тихо выходим
 
+        # Клиент мог за это время прислать НОВУЮ ссылку (старая умерла вместе
+        # с закрытой вкладкой Fragment) — пробуем всегда с самой свежей.
+        link = (order.get("rent_link") or "").strip() or link
         ok, err = await attempt_connect(bot, order, link)
         if ok:
             await announce_success(bot, order, " автоматически, со второй попытки (после оплаты в кошельке)")
@@ -309,7 +352,90 @@ async def connect_rent_link(bot: Bot, order: dict, link: str, *, announce_start:
         reply_markup=_retry_kb(order["id"]),
     )
 
-    task = asyncio.create_task(_retry_loop(bot, order["id"], link))
-    _RETRY_TASKS.add(task)
-    task.add_done_callback(_RETRY_TASKS.discard)
+    running = _RETRY_BY_ORDER.get(order["id"])
+    if running is None or running.done():
+        task = asyncio.create_task(_retry_loop(bot, order["id"], link))
+        _RETRY_TASKS.add(task)
+        _RETRY_BY_ORDER[order["id"]] = task
+
+        def _cleanup(t, oid=order["id"]):
+            _RETRY_TASKS.discard(t)
+            if _RETRY_BY_ORDER.get(oid) is t:
+                _RETRY_BY_ORDER.pop(oid, None)
+
+        task.add_done_callback(_cleanup)
     return False
+
+
+async def reconnect_completed(bot: Bot, order: dict, link: str) -> bool:
+    """
+    Переподключение по НОВОЙ ссылке, когда заказ уже закрыт как выполненный.
+    Заказ повторно не закрываем и в канал второй раз не пишем — только
+    подключаем и говорим клиенту.
+    """
+    lang = _lang_fallback(await get_user_language(order["user_id"]))
+    await _notify_client(bot, order["user_id"], RECONNECTING[lang])
+    ok, err = await attempt_connect(bot, order, link)
+    if ok:
+        await _notify_client(bot, order["user_id"], RECONNECTED[lang] + RECONNECT_HINT[lang])
+        await _notify_admins(
+            bot,
+            f"🔄 Заказ #{order['id']} ({order['item_name']}) — клиент прислал новую "
+            "ссылку, аренда переподключена автоматически. Делать ничего не нужно.",
+        )
+        return True
+    await _notify_client(bot, order["user_id"], RECONNECT_FAILED[lang])
+    await _notify_admins(
+        bot,
+        f"⚠️ Заказ #{order['id']} ({order['item_name']}) — клиент прислал новую "
+        f"ссылку, но переподключить не вышло:\n<code>{html.escape(err)}</code>\n\n"
+        f"Ссылка:\n<code>{html.escape(link)}</code>",
+        reply_markup=_retry_kb(order["id"]),
+    )
+    return False
+
+
+async def submit_rent_link(bot: Bot, user_id: int, link: str, *, announce_start: bool = True) -> dict | None:
+    """
+    Единая точка приёма ссылки — из чата и из витрины.
+
+    - заказ ждёт первую ссылку → обычное подключение с повторами;
+    - ссылка уже была, но пришла новая (чаще всего Android: вкладка Fragment
+      перезагрузилась и старая ссылка умерла) → переподключаем по новой.
+
+    -> None, если у клиента нет подходящего заказа аренды;
+       иначе {"order": ..., "connected": bool, "reconnect": bool, "throttled": bool}
+    """
+    import time
+    from database.db import (
+        get_pending_rent_link_order, get_reconnectable_rent_order, set_rent_link,
+    )
+
+    order = await get_pending_rent_link_order(user_id)
+    if order:
+        await set_rent_link(order["id"], link)
+        # В чате клиенту сразу пишем «ссылку получил»; витрина показывает это сама.
+        connected = await connect_rent_link(bot, order, link, announce_start=announce_start)
+        return {"order": order, "connected": connected, "reconnect": False, "throttled": False}
+
+    order = await get_reconnectable_rent_order(user_id)
+    if not order:
+        return None
+
+    now = time.monotonic()
+    last = _LAST_RECONNECT.get(order["id"], 0.0)
+    if now - last < RECONNECT_COOLDOWN:
+        lang = _lang_fallback(await get_user_language(user_id))
+        await _notify_client(bot, user_id, RECONNECT_SLOW_DOWN[lang])
+        return {"order": order, "connected": False, "reconnect": True, "throttled": True}
+    _LAST_RECONNECT[order["id"]] = now
+
+    await set_rent_link(order["id"], link)
+    order = dict(order, rent_link=link)
+    if order["status"] == "completed":
+        connected = await reconnect_completed(bot, order, link)
+    else:
+        # Ещё не подключали (ждём перевод в кошельке) — идущий цикл повторов
+        # возьмёт новую ссылку сам; пробуем и сразу, вдруг перевод уже прошёл.
+        connected = await connect_rent_link(bot, order, link, announce_start=False)
+    return {"order": order, "connected": connected, "reconnect": True, "throttled": False}

@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import config
 from database.db import init_db, expire_stale_unpaid_orders
 from services.stats_api import start_stats_server
-from handlers import user, admin, order, payment, webapp, support, rent_link, sms_payment, cart
+from handlers import user, admin, order, payment, webapp, support, rent_link, sms_payment, cart, review
 
 logging.basicConfig(level=logging.INFO)
 
@@ -115,6 +115,9 @@ async def main():
 
     # Порядок важен: сначала специфичные роутеры, потом общие
     dp.include_router(sms_payment.router)
+    # Отзывы — рано: комментарий к оценке ловится только в своём FSM-состоянии,
+    # и его не должны перехватить поддержка или общие обработчики текста.
+    dp.include_router(review.router)
     dp.include_router(admin.router)
     dp.include_router(support.router)
     dp.include_router(webapp.router)
@@ -170,6 +173,10 @@ async def main():
 
     # Сторож вебхука — см. комментарий у _webhook_watchdog.
     _BACKGROUND_TASKS.append(asyncio.create_task(_webhook_watchdog(bot)))
+
+    # Просьба оценить выполненный заказ в чате (если не оценил в витрине).
+    from services.reviews import review_request_loop
+    _BACKGROUND_TASKS.append(asyncio.create_task(review_request_loop(bot)))
 
     await dp.start_polling(bot)
 
