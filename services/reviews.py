@@ -29,12 +29,14 @@ import config
 from database.db import (
     add_review, get_order, get_orders_to_ask_review, get_review, get_user,
     get_user_language, mark_review_asked, review_key_order, set_review_channel_msg,
+    get_orders_to_remind_review, mark_review_reminded,
     set_review_comment, get_cart_orders,
 )
 
 COMMENT_MAX = 500
 LOW_RATING = 3            # 1..3 — повод владельцу написать клиенту
 ASK_DELAY_SEC = 3 * 60    # сколько ждать после выполнения, прежде чем просить в чате
+REMIND_AFTER_HOURS = 2   # единственное напоминание — через столько часов после просьбы
 
 _lang = lambda v: v if v in ("uz", "ru", "en") else "uz"
 
@@ -42,6 +44,11 @@ ASK = {
     "uz": "✅ Buyurtmangiz bajarildi!\n\n<b>{item}</b> — hammasi yoqdimi? Xizmatimizni baholang 👇",
     "ru": "✅ Заказ выполнен!\n\n<b>{item}</b> — всё понравилось? Оцените нас 👇",
     "en": "✅ Your order is done!\n\n<b>{item}</b> — happy with it? Rate us 👇",
+}
+REMIND = {
+    "uz": "⏰ <b>{item}</b> — buyurtmangiz qanday bo'ldi?\n\nBir bosishda baholang 👇 Bu boshqa xaridorlarga tanlashda yordam beradi.",
+    "ru": "⏰ <b>{item}</b> — как вам заказ?\n\nОцените в одно нажатие 👇 Это помогает другим покупателям с выбором.",
+    "en": "⏰ <b>{item}</b> — how was your order?\n\nRate it in one tap 👇 It helps other buyers choose.",
 }
 THANKS_ASK_COMMENT = {
     "uz": "Rahmat! {stars}\n\nIzoh qoldirasizmi? Bir-ikki so'z yozib yuboring 👇",
@@ -248,12 +255,12 @@ async def add_comment_later(bot: Bot, order_id: int, user_id: int, comment: str)
 _FIRST_SEEN: dict[int, float] = {}
 
 
-async def ask_for_review(bot: Bot, order: dict) -> None:
+async def ask_for_review(bot: Bot, order: dict, reminder: bool = False) -> None:
     lang = _lang(await get_user_language(order["user_id"]))
     item = html.escape(await item_label(order, lang))
+    text = (REMIND if reminder else ASK)[lang].format(item=item)
     try:
-        await bot.send_message(order["user_id"], ASK[lang].format(item=item),
-                               reply_markup=rate_kb(order["id"]))
+        await bot.send_message(order["user_id"], text, reply_markup=rate_kb(order["id"]))
     except Exception:
         pass  # клиент заблокировал бота — ничего страшного
 
@@ -279,6 +286,12 @@ async def review_request_loop(bot: Bot) -> None:
                 if await get_review(order["id"]):
                     continue  # уже оценил в витрине
                 await ask_for_review(bot, order)
+
+            # Одно напоминание тем, кто так и не оценил. Больше не пишем:
+            # навязчивость раздражает сильнее, чем помогает.
+            for order in await get_orders_to_remind_review(REMIND_AFTER_HOURS):
+                await mark_review_reminded(order)
+                await ask_for_review(bot, order, reminder=True)
         except Exception as e:
             logging.error(f"Цикл просьб об отзыве: {e}")
         await asyncio.sleep(60)

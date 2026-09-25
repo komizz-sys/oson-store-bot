@@ -246,6 +246,18 @@ async def init_db():
             await db.execute("UPDATE orders SET review_asked = 1")
         except Exception:
             pass  # колонка уже была — старые заказы помечены в прошлый раз
+        # Одно напоминание об отзыве через несколько часов после первой просьбы.
+        # Как и выше: всем уже существующим заказам ставим «напоминали», чтобы
+        # после деплоя бот не разослал напоминания по старым заказам.
+        try:
+            await db.execute("ALTER TABLE orders ADD COLUMN review_asked_at TEXT")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE orders ADD COLUMN review_reminded INTEGER DEFAULT 0")
+            await db.execute("UPDATE orders SET review_reminded = 1")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -1975,9 +1987,44 @@ async def get_orders_to_ask_review(within_hours: int = 48, limit: int = 20) -> l
 async def mark_review_asked(order: dict) -> None:
     async with aiosqlite.connect(config.DB_PATH) as db:
         if order.get("cart_id"):
-            await db.execute("UPDATE orders SET review_asked = 1 WHERE cart_id = ?", (order["cart_id"],))
+            await db.execute("UPDATE orders SET review_asked = 1, review_asked_at = datetime('now') "
+                             "WHERE cart_id = ?", (order["cart_id"],))
         else:
-            await db.execute("UPDATE orders SET review_asked = 1 WHERE id = ?", (order["id"],))
+            await db.execute("UPDATE orders SET review_asked = 1, review_asked_at = datetime('now') "
+                             "WHERE id = ?", (order["id"],))
+        await db.commit()
+
+
+async def get_orders_to_remind_review(after_hours: int, limit: int = 20) -> list[dict]:
+    """
+    Заказы, где оценку попросили больше after_hours часов назад, отзыва так и
+    нет, и напоминания ещё не было. Напоминание одно — дальше не пристаём.
+    Окно в 3 дня — страховка от напоминаний по давно забытым заказам.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT o.* FROM orders o
+               WHERE o.status = 'completed'
+                 AND COALESCE(o.review_asked, 0) = 1
+                 AND COALESCE(o.review_reminded, 0) = 0
+                 AND o.review_asked_at IS NOT NULL
+                 AND o.review_asked_at <= datetime('now', ?)
+                 AND o.review_asked_at >= datetime('now', '-3 days')
+                 AND (o.cart_id IS NULL OR o.id = (SELECT MIN(id) FROM orders c WHERE c.cart_id = o.cart_id))
+                 AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.order_id = o.id)
+               ORDER BY o.id LIMIT ?""",
+            (f"-{int(after_hours)} hours", limit),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def mark_review_reminded(order: dict) -> None:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        if order.get("cart_id"):
+            await db.execute("UPDATE orders SET review_reminded = 1 WHERE cart_id = ?", (order["cart_id"],))
+        else:
+            await db.execute("UPDATE orders SET review_reminded = 1 WHERE id = ?", (order["id"],))
         await db.commit()
 
 
