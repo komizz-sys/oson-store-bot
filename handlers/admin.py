@@ -625,12 +625,9 @@ async def finalize_payment(bot: Bot, order_id: int, order: dict) -> None:
 
     await _send_attached_content(bot, order_id, order)
 
-    # Мягкая допродажа смежной категории (купил Stars -> предлагаем Premium и т.д.)
-    try:
-        from services.upsell import send_upsell
-        await send_upsell(bot, order["user_id"], order["category"], lang)
-    except Exception:
-        pass  # апсейл не критичен — не мешаем основному потоку оплаты
+    # Допродажа смежной категории теперь показывается в витрине на экране
+    # «Bajarildi» (кнопкой сразу в нужный раздел), а не отдельным сообщением
+    # в чате — там она терялась среди инструкций и выглядела как спам.
 
     await _fulfill_order(bot, order_id, order)
 
@@ -658,14 +655,7 @@ async def finalize_cart_payment(bot: Bot, cart_id: str, cart_orders: list[dict] 
     except Exception:
         pass
 
-    # Апсейл — один на всю корзину, по самому дорогому товару в ней
-    # (иначе после корзины из пяти позиций человек получил бы пять реклам).
-    try:
-        from services.upsell import send_upsell
-        top = max(orders, key=lambda o: o["price_uzs"])
-        await send_upsell(bot, user_id, top["category"], lang)
-    except Exception:
-        pass
+    # Допродажа — в витрине на экране «Bajarildi», не в чате (см. finalize_payment).
 
     for o in orders:
         o = dict(o, status="paid")
