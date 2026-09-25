@@ -212,6 +212,10 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_topups_amount ON topup_requests(expected_uzs)",
             "ALTER TABLE topup_requests ADD COLUMN receipt_fp TEXT",
             "ALTER TABLE users ADD COLUMN last_seen TEXT",
+            # Метка рекламного источника из ссылки t.me/bot?start=reel1 —
+            # первая, по которой человек пришёл (см. set_user_source).
+            "ALTER TABLE users ADD COLUMN source TEXT",
+            "ALTER TABLE users ADD COLUMN source_at TEXT",
             "ALTER TABLE orders ADD COLUMN content_video_url TEXT",
             "ALTER TABLE orders ADD COLUMN content_text TEXT",
             "ALTER TABLE orders ADD COLUMN recipient_user_id INTEGER",
@@ -254,6 +258,68 @@ async def upsert_user(user_id: int, username: str, full_name: str):
             (user_id, username, full_name),
         )
         await db.commit()
+
+
+async def set_user_source(user_id: int, source: str) -> bool:
+    """
+    Запомнить рекламную метку (?start=reel1), по которой пришёл человек.
+
+    First-touch: пишем ТОЛЬКО если метки ещё нет. Пришёл по reel1, потом
+    кликнул reel2 — остаётся reel1, иначе заслугу первого ролика отдали бы
+    второму. -> True, если метка записана сейчас.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE users SET source = ?, source_at = datetime('now') "
+            "WHERE user_id = ? AND source IS NULL",
+            (source, user_id),
+        )
+        await db.commit()
+        return cur.rowcount == 1
+
+
+async def get_source_stats(days: int | None = None) -> list[dict]:
+    """
+    Статистика по рекламным меткам для /sources.
+
+    По каждой метке: сколько людей пришло, сколько из них НОВЫХ (впервые
+    запустили бота по этой ссылке, а не были клиентами раньше), сколько
+    купили хотя бы раз и на какую сумму.
+
+    Заказы считаются только сделанные ПОСЛЕ прихода по метке: если старый
+    клиент кликнул ролик, его прошлые покупки к этому ролику не относятся.
+    days — только те, кто пришёл по метке за последние N дней.
+    """
+    status_ph = ",".join("?" for _ in PAID_STATUSES)
+    where = "u.source IS NOT NULL"
+    params: list = list(PAID_STATUSES)
+    if days:
+        where += " AND u.source_at >= datetime('now', ?)"
+        params.append(f"-{int(days)} days")
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            f"""SELECT u.source AS source,
+                       COUNT(*) AS users,
+                       SUM(CASE WHEN u.created_at >= datetime(u.source_at, '-2 minutes') THEN 1 ELSE 0 END) AS new_users,
+                       SUM(CASE WHEN COALESCE(p.cnt, 0) > 0 THEN 1 ELSE 0 END) AS buyers,
+                       COALESCE(SUM(p.revenue), 0) AS revenue,
+                       COALESCE(SUM(p.cnt), 0) AS orders
+                FROM users u
+                LEFT JOIN (
+                    SELECT o.user_id, COUNT(*) AS cnt, SUM(o.price_uzs) AS revenue
+                    FROM orders o JOIN users uu ON uu.user_id = o.user_id
+                    WHERE o.status IN ({status_ph})
+                      AND uu.source_at IS NOT NULL
+                      AND o.created_at >= uu.source_at
+                    GROUP BY o.user_id
+                ) p ON p.user_id = u.user_id
+                WHERE {where}
+                GROUP BY u.source
+                ORDER BY revenue DESC, users DESC""",
+            params,
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
 
 async def get_stats() -> dict:

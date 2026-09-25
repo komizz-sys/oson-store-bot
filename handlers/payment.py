@@ -1,5 +1,6 @@
 import asyncio
 
+import re
 from aiogram import Router, F, Bot
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.fsm.context import FSMContext
@@ -294,11 +295,28 @@ async def handle_start_in_state(message: Message, state: FSMContext):
 
 
 @router.message(OrderStates.waiting_payment_proof)
-async def wrong_proof_format(message: Message):
+async def wrong_proof_format(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
     # Команды пропускаем дальше по цепочке. Иначе человек, ждущий оплаты,
     # оказывался в ловушке: на /balans, /operator и любую другую команду бот
     # отвечал «пришлите чек» — и выйти из этого состояния было нечем.
-    if (message.text or "").startswith("/"):
+    if text.startswith("/"):
+        raise SkipHandler()
+
+    # БАГ БЫЛ ЗДЕСЬ: заказ из витрины, оплаченный и подтверждённый по SMS,
+    # оставлял клиента в состоянии «жду чек». Потом он присылал в чат
+    # tc://-ссылку для аренды — а бот отвечал «пришлите скриншот чека», и
+    # ссылка пропадала. Если ждать уже нечего — снимаем состояние и отдаём
+    # сообщение дальше (там его подхватит приём ссылки или поддержка).
+    from database.db import get_user_orders
+    try:
+        orders = await get_user_orders(message.from_user.id)
+    except Exception:
+        orders = []
+    awaiting = any(o["status"] in ("awaiting_payment", "payment_review") for o in orders)
+    if not awaiting or re.match(r"^(tc://|https?://|t\.me/)", text, re.IGNORECASE):
+        if not awaiting:
+            await state.clear()
         raise SkipHandler()
     await message.answer("Пришлите, пожалуйста, скриншот или файл чека об оплате 📎 (или нажмите «Отмена» выше)")
 

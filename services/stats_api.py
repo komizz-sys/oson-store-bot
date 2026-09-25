@@ -209,11 +209,18 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
 
     from services.rent_connect import submit_rent_link
 
-    # Первая ссылка — обычное подключение; новая взамен умершей (Android
-    # перезагрузил вкладку Fragment) — переподключение. Логика общая с чатом.
-    result = await submit_rent_link(_bot, user["id"], link, announce_start=False)
+    # «Qayta ulash» у конкретной аренды в витрине приходит с order_id.
+    # Без него — первая ссылка после оплаты, либо новая взамен умершей.
+    req_order_id = _order_id_from(body)
+    if req_order_id:
+        from services.rent_connect import relink_rental
+        result = await relink_rental(_bot, user["id"], req_order_id, link)
+    else:
+        result = await submit_rent_link(_bot, user["id"], link, announce_start=False)
     if result is None:
         return web.json_response({"error": "no_pending_order"}, status=400)
+    if result.get("choose"):
+        return web.json_response({"error": "choose_rental"}, status=400)
     order = result["order"]
     return web.json_response({
         "ok": True,
@@ -225,54 +232,13 @@ async def handle_submit_rent_link(request: web.Request) -> web.Response:
     })
 
 
-async def handle_send_rent_tutorial(request: web.Request) -> web.Response:
+async def _send_platform_video(request: web.Request) -> web.Response:
     """
-    Переотправить клиенту видео-инструкцию «как получить ссылку для аренды».
+    Прислать в чат видео-инструкцию для телефона клиента и дать витрине
+    закрыться — человек сразу оказывается там, куда пришло видео.
 
-    Видео живёт в чате бота, а ссылку человек вводит в витрине — и к моменту,
-    когда она понадобилась, инструкция уже уехала вверх по переписке за
-    десятком сообщений. Кнопка в витрине присылает её заново, свежим
-    сообщением, и витрина закрывается — человек сразу видит видео.
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        return web.json_response({"error": "bad request body"}, status=400)
-
-    user = validate_init_data(body.get("initData"), config.BOT_TOKEN)
-    if not user:
-        return web.json_response({"error": "invalid or expired initData"}, status=403)
-
-    # Берём реальный заказ аренды клиента — тексты инструкции зависят от
-    # языка, а сама функция общая с той, что шлёт видео после оплаты.
-    orders = await get_user_orders(user["id"])
-    order = next(
-        (o for o in orders if o["category"] == "nft_rent"
-         and o["status"] in ("paid", "fulfilling")),
-        None,
-    )
-    if not order:
-        # Заказа нет (например, человек просто листает витрину) — покажем
-        # инструкцию всё равно, подставив минимально нужные поля.
-        order = {"user_id": user["id"], "item_name": "", "id": 0}
-
-    from services.rent_link import send_rent_link_tutorial
-
-    try:
-        await send_rent_link_tutorial(_bot, order)
-    except Exception:
-        return web.json_response({"ok": False, "error": "send_failed"}, status=502)
-    return web.json_response({"ok": True})
-
-
-async def handle_send_display_video(request: web.Request) -> web.Response:
-    """
-    Прислать в чат видео «как показать арендованный подарок в профиле».
-
-    Подарок приходит на Fragment, и дальше его нужно вывести на профиль
-    руками — за клиента это не сделает ни бот, ни магазин. Инструкция уходит
-    в чат: там её можно пересмотреть в любой момент, в отличие от экрана
-    витрины, который закрывается вместе с мини-аппом.
+    platform приходит из витрины (кнопка «Android» / «iPhone»); если не
+    пришла — берём то, что сообщил Telegram (tg.platform).
     """
     try:
         body = await request.json()
@@ -283,24 +249,20 @@ async def handle_send_display_video(request: web.Request) -> web.Response:
     if not user:
         return web.json_response({"error": "invalid or expired initData"}, status=403)
 
-    from database.db import get_user_language
-    from services.rent_connect import DISPLAY_HELP
-
-    lang = await get_user_language(user["id"]) or "uz"
-    if lang not in ("uz", "ru", "en"):
-        lang = "uz"
-    caption = DISPLAY_HELP[lang]
+    platform = "android" if "android" in str(body.get("platform") or "").lower() else "ios"
+    from services.rent_link import send_tutorial_video
 
     try:
-        if config.RENT_DISPLAY_VIDEO:
-            await _bot.send_video(user["id"], config.RENT_DISPLAY_VIDEO, caption=caption)
-        else:
-            # Видео ещё не записано — текстовой инструкции всё равно достаточно,
-            # чтобы человек не остался один на один с вопросом.
-            await _bot.send_message(user["id"], caption)
+        await send_tutorial_video(_bot, user["id"], platform)
     except Exception:
         return web.json_response({"ok": False, "error": "send_failed"}, status=502)
     return web.json_response({"ok": True})
+
+
+# Две старые кнопки витрины («как получить ссылку» и «как показать в профиле»)
+# ведут на одно и то же: видео показывает оба шага, отличается только телефон.
+handle_send_rent_tutorial = _send_platform_video
+handle_send_display_video = _send_platform_video
 
 
 async def handle_balance(request: web.Request) -> web.Response:
@@ -1375,6 +1337,76 @@ async def handle_custom_emoji(request: web.Request) -> web.Response:
 
 
 # --------------------------------------------------------------------------
+# «Я в спаме» — клиент не может написать админу первым
+# --------------------------------------------------------------------------
+# Premium владелец оформляет руками, поэтому после оплаты витрина предлагает
+# написать ему. Но аккаунт в спам-блоке Telegram не может первым написать
+# незнакомому человеку. Тогда клиент жмёт «Men spamdaman», а бот присылает
+# владельцу уведомление. Ответ на это уведомление (Reply) бот доставит
+# клиенту сам — боту клиент писал, поэтому ему бот написать может всегда.
+_SPAM_HELP_SENT: dict[int, float] = {}
+_SPAM_HELP_COOLDOWN = 10 * 60
+
+_SPAM_HELP_REPLY = {
+    "uz": "✅ Adminga xabar berildi — u sizga shu bot orqali yozadi.",
+    "ru": "✅ Админ уведомлён — он напишет вам через этого бота.",
+    "en": "✅ The admin has been notified — they'll message you through this bot.",
+}
+
+
+async def handle_spam_help(request: web.Request) -> web.Response:
+    import html as _html
+    import time
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad request body"}, status=400)
+    user = _extract_verified_user(body)
+    if not user:
+        return web.json_response({"error": "invalid or expired initData"}, status=403)
+    blocked = await _banned_response(user["id"])
+    if blocked is not None:
+        return blocked
+
+    order = await get_order(_order_id_from(body))
+    if not order or order["user_id"] != user["id"] or order["status"] not in ("paid", "fulfilling", "completed"):
+        return web.json_response({"error": "not_found"}, status=404)
+
+    now = time.monotonic()
+    if now - _SPAM_HELP_SENT.get(order["id"], 0.0) < _SPAM_HELP_COOLDOWN:
+        return web.json_response({"ok": True, "repeat": True})  # уже сообщили — не спамим админа
+    _SPAM_HELP_SENT[order["id"]] = now
+
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from database.db import get_user_language, save_support_mapping
+
+    name = _html.escape(" ".join(filter(None, [user.get("first_name"), user.get("last_name")])) or "—")
+    uname = f"@{_html.escape(user['username'])}" if user.get("username") else "без username"
+    text = (
+        "🚫 <b>Клиент в спам-блоке</b> — сам написать тебе не может.\n\n"
+        f"Заказ #{order['id']} · {_html.escape(order['item_name'] or '')}\n"
+        f"Клиент: {name} · {uname} · <code>{user['id']}</code>\n\n"
+        "👉 <b>Ответь на это сообщение</b> (Reply) — бот перешлёт ответ клиенту."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="💬 Открыть профиль клиента", url=f"tg://user?id={user['id']}")
+    ]])
+    for admin_id in config.ADMIN_IDS:
+        try:
+            msg = await _bot.send_message(admin_id, text, reply_markup=kb)
+            await save_support_mapping(admin_id, msg.message_id, user["id"])
+        except Exception:
+            pass
+
+    lang = await get_user_language(user["id"]) or "uz"
+    try:
+        await _bot.send_message(user["id"], _SPAM_HELP_REPLY.get(lang, _SPAM_HELP_REPLY["uz"]))
+    except Exception:
+        pass
+    return web.json_response({"ok": True})
+
+
+# --------------------------------------------------------------------------
 # Отзывы
 # --------------------------------------------------------------------------
 _REVIEWS_CACHE: dict = {"at": 0.0, "data": None}
@@ -1448,6 +1480,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/my_stats", handle_my_stats)
     app.router.add_get("/public/leaderboard", handle_leaderboard)
     app.router.add_post("/public/review", handle_submit_review)
+    app.router.add_post("/public/spam_help", handle_spam_help)
     app.router.add_get("/public/reviews", handle_reviews)
     app.router.add_post("/public/leaderboard_me", handle_leaderboard_me)
     app.router.add_get("/public/avatar/{user_id}", handle_avatar)
@@ -1470,7 +1503,7 @@ async def start_stats_server(bot, storage):
     app.router.add_post("/public/topup_receipt", handle_topup_receipt)
     app.router.add_post("/public/cancel_order", handle_cancel_order)
     app.router.add_post("/public/submit_receipt", handle_submit_receipt)
-    for path in ("/public/my_orders", "/public/my_stats", "/public/leaderboard_me", "/public/review", "/public/_diag", "/public/create_order",
+    for path in ("/public/my_orders", "/public/my_stats", "/public/leaderboard_me", "/public/review", "/public/spam_help", "/public/_diag", "/public/create_order",
                  "/public/create_cart_order", "/public/my_rentals",
                  "/public/place_order", "/public/place_cart_order", "/public/order_status",
                  "/public/active_order", "/public/submit_rent_link", "/public/cancel_order", "/public/submit_receipt"):

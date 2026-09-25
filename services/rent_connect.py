@@ -122,13 +122,11 @@ DISPLAY_VIDEO_BTN = {
 }
 
 
-def display_help_kb(lang: str):
-    """Кнопка с инструкцией под сообщением об успешном подключении."""
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
+def display_help_kb(lang: str, order_id: int | None = None):
+    """Под сообщением об успехе: инструкции для Android/iPhone и «Обновить ссылку»."""
+    from services.rent_link import tutorial_kb
 
-    b = InlineKeyboardBuilder()
-    b.button(text=DISPLAY_VIDEO_BTN[lang], callback_data="rent:displayhelp")
-    return b.as_markup()
+    return tutorial_kb(lang, relink_order_id=order_id)
 
 
 # Первая неудача — НЕ повод пугать клиента: почти всегда это «админ ещё не
@@ -147,9 +145,9 @@ PENDING = {
 # подтверждение (см. get_reconnectable_rent_order), так что честно говорим,
 # что делать, если нет.
 RECONNECT_HINT = {
-    "uz": "\n\n🔄 Fragment'da ulanmagan bo'lsa — u yerda <b>yangi havola</b> oling va shu yerga yuboring, qayta ulayman.",
-    "ru": "\n\n🔄 Если на Fragment не подключилось — возьмите там <b>новую ссылку</b> и пришлите сюда, переподключу.",
-    "en": "\n\n🔄 If it didn't connect on Fragment — get a <b>new link</b> there and send it here, I'll reconnect.",
+    "uz": "\n\n🔄 Fragment'da ulanmagan bo'lsa — pastdagi <b>«Havolani yangilash»</b> tugmasini bosing va yangi havola yuboring.",
+    "ru": "\n\n🔄 Если на Fragment не подключилось — нажмите <b>«Обновить ссылку»</b> ниже и пришлите новую ссылку.",
+    "en": "\n\n🔄 If it didn't connect on Fragment — tap <b>«Update the link»</b> below and send a new link.",
 }
 RECONNECTING = {
     "uz": "🔄 Yangi havolani oldim, qayta ulayapman... Fragment sahifasini yopmang.",
@@ -255,7 +253,7 @@ async def announce_success(bot: Bot, order: dict, attempt_note: str = "") -> Non
         # Telegram примет за HTML («&», «<»). Тогда сообщение не отправится
         # вообще, и клиент решит, что его кинули. Экранируем.
         SUCCESS[lang].format(item=html.escape(order["item_name"] or "")) + RECONNECT_HINT[lang],
-        reply_markup=display_help_kb(lang),
+        reply_markup=display_help_kb(lang, order["id"]),
     )
     await _complete_order(bot, order)
     await _notify_admins(
@@ -377,7 +375,8 @@ async def reconnect_completed(bot: Bot, order: dict, link: str) -> bool:
     await _notify_client(bot, order["user_id"], RECONNECTING[lang])
     ok, err = await attempt_connect(bot, order, link)
     if ok:
-        await _notify_client(bot, order["user_id"], RECONNECTED[lang] + RECONNECT_HINT[lang])
+        await _notify_client(bot, order["user_id"], RECONNECTED[lang] + RECONNECT_HINT[lang],
+                             reply_markup=display_help_kb(lang, order["id"]))
         await _notify_admins(
             bot,
             f"🔄 Заказ #{order['id']} ({order['item_name']}) — клиент прислал новую "
@@ -406,10 +405,7 @@ async def submit_rent_link(bot: Bot, user_id: int, link: str, *, announce_start:
     -> None, если у клиента нет подходящего заказа аренды;
        иначе {"order": ..., "connected": bool, "reconnect": bool, "throttled": bool}
     """
-    import time
-    from database.db import (
-        get_pending_rent_link_order, get_reconnectable_rent_order, set_rent_link,
-    )
+    from database.db import get_pending_rent_link_order, set_rent_link
 
     order = await get_pending_rent_link_order(user_id)
     if order:
@@ -418,24 +414,52 @@ async def submit_rent_link(bot: Bot, user_id: int, link: str, *, announce_start:
         connected = await connect_rent_link(bot, order, link, announce_start=announce_start)
         return {"order": order, "connected": connected, "reconnect": False, "throttled": False}
 
-    order = await get_reconnectable_rent_order(user_id)
-    if not order:
+    # Ссылку прислали без выбора аренды. Если действующая аренда одна —
+    # переподключаем её; если несколько — пусть клиент выберет кнопкой.
+    rentals = await relinkable_rentals(user_id)
+    if not rentals:
+        return None
+    if len(rentals) > 1:
+        return {"order": None, "connected": False, "reconnect": True, "throttled": False,
+                "choose": rentals}
+    return await relink_rental(bot, user_id, rentals[0]["order_id"], link)
+
+
+async def relinkable_rentals(user_id: int) -> list[dict]:
+    """Действующие аренды клиента, которые можно переподключить новой ссылкой."""
+    from services.rent_extension import get_active_rentals
+
+    return await get_active_rentals(user_id)
+
+
+async def relink_rental(bot: Bot, user_id: int, order_id: int, link: str) -> dict | None:
+    """
+    Переподключить КОНКРЕТНУЮ аренду новой ссылкой — кнопка «Обновить ссылку»,
+    /relink или «Qayta ulash» в витрине. Работает, пока аренда не закончилась.
+    -> None, если такой действующей аренды у клиента нет.
+    """
+    import time
+    from database.db import set_rent_link
+
+    if order_id not in {r["order_id"] for r in await relinkable_rentals(user_id)}:
+        return None
+    order = await get_order(order_id)
+    if not order or order["user_id"] != user_id:
         return None
 
     now = time.monotonic()
-    last = _LAST_RECONNECT.get(order["id"], 0.0)
-    if now - last < RECONNECT_COOLDOWN:
+    if now - _LAST_RECONNECT.get(order_id, 0.0) < RECONNECT_COOLDOWN:
         lang = _lang_fallback(await get_user_language(user_id))
         await _notify_client(bot, user_id, RECONNECT_SLOW_DOWN[lang])
         return {"order": order, "connected": False, "reconnect": True, "throttled": True}
-    _LAST_RECONNECT[order["id"]] = now
+    _LAST_RECONNECT[order_id] = now
 
-    await set_rent_link(order["id"], link)
+    await set_rent_link(order_id, link)
     order = dict(order, rent_link=link)
     if order["status"] == "completed":
         connected = await reconnect_completed(bot, order, link)
     else:
-        # Ещё не подключали (ждём перевод в кошельке) — идущий цикл повторов
-        # возьмёт новую ссылку сам; пробуем и сразу, вдруг перевод уже прошёл.
+        # Ещё не подключали — идущий цикл повторов возьмёт новую ссылку сам;
+        # пробуем и сразу.
         connected = await connect_rent_link(bot, order, link, announce_start=False)
     return {"order": order, "connected": connected, "reconnect": True, "throttled": False}

@@ -1,5 +1,6 @@
+import html
 from aiogram import Router, F, Bot
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, LabeledPrice
@@ -57,8 +58,8 @@ async def get_file_id_start(message: Message, state: FSMContext):
     await state.set_state(GetFileIdStates.waiting_file)
     await message.answer(
         "📎 Пришли (или перешли) сюда видео с туром аренды — отвечу его file_id.\n"
-        "Его нужно один раз вписать в переменную RENT_TUTORIAL_VIDEO на Railway "
-        "(сервис Worker) и перезапустить бота."
+        "Видео для iPhone впиши в переменную RENT_VIDEO_IOS, для Android — в "
+        "RENT_VIDEO_ANDROID (Railway → сервис бота → Variables)."
     )
 
 
@@ -73,8 +74,9 @@ async def get_file_id_video(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "✅ file_id этого видео:\n<code>" + message.video.file_id + "</code>\n\n"
-        "Скопируй и вставь как значение переменной <code>RENT_TUTORIAL_VIDEO</code> "
-        "на Railway (сервис Worker) → Variables → перезапусти сервис."
+        "Видео для iPhone → переменная <code>RENT_VIDEO_IOS</code>,\n"
+        "видео для Android → <code>RENT_VIDEO_ANDROID</code>.\n"
+        "Railway → сервис бота → Variables → вставь → бот перезапустится сам."
     )
 
 
@@ -293,6 +295,7 @@ async def admin_help(message: Message):
     await message.answer(
         "🛠 Админ-команды:\n"
         "/stats — статистика по пользователям и заказам\n"
+        "/sources [дни] — откуда пришли клиенты: метки из ссылок ?start=reel1 (напр. /sources 7)\n"
         "/broadcast — разослать сообщение всем пользователям\n"
         "/order_&lt;id&gt; — посмотреть заказ (напр. /order_5)\n"
         "/cancel &lt;id&gt; — отменить заказ на любом этапе, даже уже оплаченный "
@@ -309,7 +312,7 @@ async def admin_help(message: Message):
         "/closeall — закрыть ВСЕ висящие заказы: оплаченные отметить выполненными, неоплаченные отменить (с подтверждением)\n"
         "/userbalance &lt;@username|id&gt; [+/-сумма] — баланс клиента: посмотреть или поправить вручную (напр. /userbalance @ali +50000)\n"
         "/addgift — добавить снятый с продажи Telegram-подарок в каталог (с картинкой)\n"
-        "/getfileid — получить file_id видео (для RENT_TUTORIAL_VIDEO)\n"
+        "/getfileid — получить file_id видео (для RENT_VIDEO_IOS / RENT_VIDEO_ANDROID)\n"
         "/myid — узнать свой Telegram ID (сверить с ADMIN_IDS)\n"
         "/chatid — ID текущего чата (нужен для SMS_RELAY_CHAT_ID)\n"
         "/topup &lt;кол-во⭐&gt; — пополнить баланс звёзд САМОГО БОТА (нужно, чтобы sendGift "
@@ -445,6 +448,46 @@ async def stats_cmd(message: Message):
     )
 
 
+@router.message(Command("sources"))
+async def sources_cmd(message: Message, command: CommandObject):
+    """Откуда пришли клиенты: метки из ссылок t.me/bot?start=reel1."""
+    if not is_admin(message.from_user.id):
+        return
+    from database.db import get_source_stats
+    from services.prices import format_uzs
+
+    arg = (command.args or "").strip() if command else ""
+    days = int(arg) if arg.isdigit() and int(arg) > 0 else None
+    rows = await get_source_stats(days)
+    period = f"за {days} дн." if days else "за всё время"
+    if not rows:
+        await message.answer(
+            f"📣 <b>Источники</b> ({period})\n\nПока никто не пришёл по меткам.\n"
+            "Ссылка для рекламы: <code>t.me/&lt;бот&gt;?start=reel1</code>"
+        )
+        return
+
+    lines = [f"📣 <b>Источники</b> ({period})\n"]
+    tot_users = tot_new = tot_buyers = tot_rev = 0
+    for r in rows:
+        conv = (r["buyers"] / r["users"] * 100) if r["users"] else 0
+        lines.append(
+            f"<b>{html.escape(r['source'])}</b>\n"
+            f"  👥 пришло: {r['users']} (новых {r['new_users']})\n"
+            f"  🛒 купили: {r['buyers']} · {conv:.1f}%\n"
+            f"  💰 {format_uzs(r['revenue'])} ({r['orders']} заказ.)"
+        )
+        tot_users += r["users"]; tot_new += r["new_users"]
+        tot_buyers += r["buyers"]; tot_rev += r["revenue"]
+    tot_conv = (tot_buyers / tot_users * 100) if tot_users else 0
+    lines.append(
+        f"\n<b>Итого:</b> {tot_users} чел. (новых {tot_new}) · купили {tot_buyers} "
+        f"· {tot_conv:.1f}% · {format_uzs(tot_rev)}"
+    )
+    lines.append("\n<i>Считаются только заказы, сделанные после перехода по метке.</i>")
+    await message.answer("\n".join(lines))
+
+
 async def _send_attached_content(bot: Bot, order_id: int, order: dict) -> None:
     """Видео/текст-инструкция, если админ прикрепил их к заказу."""
     if order.get("content_video_url"):
@@ -499,12 +542,12 @@ async def _fulfill_order(bot: Bot, order_id: int, order: dict) -> None:
             )
         else:
             await send_rent_link_tutorial(bot, order)
-            if not config.RENT_TUTORIAL_VIDEO:
+            if not config.RENT_VIDEO_IOS:
                 for admin_id in config.ADMIN_IDS:
                     try:
                         await bot.send_message(
                             admin_id,
-                            "⚠️ RENT_TUTORIAL_VIDEO не настроен — клиенту ушёл только текст, "
+                            "⚠️ RENT_VIDEO_IOS не настроен — клиенту ушёл только текст, "
                             "без видео. Отправь мне видео через /getfileid, чтобы это исправить.",
                         )
                     except Exception:

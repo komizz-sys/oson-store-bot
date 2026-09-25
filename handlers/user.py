@@ -1,10 +1,11 @@
 import re
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
-from database.db import upsert_user, get_user_orders, get_user_language, set_user_language
+import config
+from database.db import upsert_user, get_user_orders, get_user_language, set_user_language, set_user_source
 from keyboards.user_kb import main_menu_kb, language_select_kb, subscribe_gate_kb
 from services.prices import format_uzs
 from services.i18n import t
@@ -80,9 +81,38 @@ async def _show_main_menu(message_or_call_message, user_id: int, user=None):
     await drop_reply_kb(message_or_call_message)
 
 
+_SOURCE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _clean_source(args: str | None) -> str | None:
+    """Метка из t.me/bot?start=reel1 → "reel1". Мусор — None."""
+    value = (args or "").strip()[:32]
+    return value if value and _SOURCE_RE.match(value) else None
+
+
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command: CommandObject):
     await upsert_user(message.from_user.id, message.from_user.username or "", message.from_user.full_name)
+
+    # Рекламная метка — СРАЗУ, до проверки подписки: если человек не подписан,
+    # он уйдёт на экран подписки, а после кнопки «Проверить» метки в
+    # сообщении уже нет — она потерялась бы.
+    source = _clean_source(command.args if command else None)
+    if source:
+        try:
+            await set_user_source(message.from_user.id, source)
+        except Exception:
+            pass  # статистика не должна ломать /start
+
+    # По желанию владельца (AD_SKIP_SUBSCRIPTION=1) пришедших из рекламы не
+    # заставляем подписываться на канал перед покупкой.
+    skip_sub = bool(
+        config.AD_SKIP_SUBSCRIPTION and source
+        and source.lower().startswith(("reel", "ad"))
+    )
+    if skip_sub:
+        await _show_main_menu(message, message.from_user.id, message.from_user)
+        return
 
     if not await is_subscribed(message.bot, message.from_user.id):
         lang = await get_user_language(message.from_user.id)

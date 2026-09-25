@@ -145,6 +145,7 @@ async def main():
         await bot.set_my_commands([
             BotCommand(command="start", description="🛍 Do'kon / Магазин"),
             BotCommand(command="operator", description="💬 Operator / Оператор"),
+            BotCommand(command="relink", description="🔄 Ijara havolasini yangilash / Обновить ссылку аренды"),
         ])
     except Exception:
         pass

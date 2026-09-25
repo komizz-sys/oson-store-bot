@@ -138,6 +138,15 @@ RENT_TUTORIAL_VIDEO = os.getenv("RENT_TUTORIAL_VIDEO", "")
 # file_id берётся той же командой /getfileid, что и для RENT_TUTORIAL_VIDEO.
 RENT_DISPLAY_VIDEO = os.getenv("RENT_DISPLAY_VIDEO", "")
 
+# Видео-инструкции ОТДЕЛЬНО для iPhone и Android: на Android Fragment и
+# TON Connect выглядят и ведут себя иначе, и одно видео с iPhone андроидщиков
+# только путало. Клиент сам выбирает кнопку «Android» или «iPhone».
+# file_id — той же командой /getfileid.
+# Если RENT_VIDEO_IOS пуст — берётся прежнее видео (RENT_TUTORIAL_VIDEO).
+# Если RENT_VIDEO_ANDROID пуст — андроидщикам уйдёт видео для iPhone.
+RENT_VIDEO_IOS = os.getenv("RENT_VIDEO_IOS", "") or RENT_TUTORIAL_VIDEO or RENT_DISPLAY_VIDEO
+RENT_VIDEO_ANDROID = os.getenv("RENT_VIDEO_ANDROID", "")
+
 # ---- Автопроверка оплаты по уникальной сумме ----
 # Каждому заказу выдаётся сумма к оплате = цена + случайная надбавка (1..N сум),
 # уникальная среди всех сейчас неоплаченных заказов. Когда SMS о поступлении
@@ -212,6 +221,12 @@ PUBLIC_ORDERS_CHANNEL = os.getenv("PUBLIC_ORDERS_CHANNEL", "")
 # ---- Обязательная подписка на канал перед использованием бота ----
 REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "")
 REQUIRED_CHANNEL_LINK = os.getenv("REQUIRED_CHANNEL_LINK", "")
+
+# Пропускать проверку подписки для тех, кто пришёл по рекламной ссылке
+# (?start=reel... или ?start=ad...). Люди из рекламы часто уходят, если перед
+# покупкой их заставляют подписываться на канал. По умолчанию ВЫКЛЮЧЕНО —
+# включается переменной AD_SKIP_SUBSCRIPTION=1 на Railway.
+AD_SKIP_SUBSCRIPTION = os.getenv("AD_SKIP_SUBSCRIPTION", "0") == "1"
 
 # ---- Контакты в профиле мини-аппа ----
 OPERATOR_USERNAME = os.getenv("OPERATOR_USERNAME", "")
